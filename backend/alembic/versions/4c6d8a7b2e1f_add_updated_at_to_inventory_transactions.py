@@ -17,7 +17,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         'inventory_transactions',
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now(), nullable=False)
+        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False)
     )
 
 

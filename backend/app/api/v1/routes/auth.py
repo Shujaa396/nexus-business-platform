@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_token, get_current_user
 from app.db.session import get_db
-from app.models import OrganizationMembership, User
+from app.models import User
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
@@ -101,8 +101,11 @@ def refresh(payload: RefreshTokenRequest, db: Session = Depends(get_db)) -> Toke
     try:
         if isinstance(sub, str):
             sub = UUID(sub)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token subject",
+        ) from exc
 
     user = db.get(User, sub)
     if user is None or not user.is_active:

@@ -8,6 +8,16 @@ The backend API is versioned under `/api/v1`.
 | --- | --- | --- |
 | GET | `/api/v1/health` | Confirms the API process is running |
 
+## Phase 6 Invoice Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/invoices/from-order` | Creates a draft invoice from a confirmed or completed order |
+| GET | `/api/v1/invoices` | Lists invoices scoped to the authenticated organization |
+| GET | `/api/v1/invoices/{invoice_id}` | Retrieves one tenant-scoped invoice with line items |
+| POST | `/api/v1/invoices/{invoice_id}/issue` | Moves a draft invoice to issued |
+| POST | `/api/v1/invoices/{invoice_id}/payments/sync` | Updates invoice payment status from completed order payments or an explicit paid amount |
+
 ## Implemented in Phase 3 (Authentication + RBAC)
 
 | Method | Path | Purpose |
@@ -68,4 +78,3 @@ The backend API is versioned under `/api/v1`.
 - Dashboard analytics
 - Audit logs and notifications
 - Controlled AI analytics tools
-

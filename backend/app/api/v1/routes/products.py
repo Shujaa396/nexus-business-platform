@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 from typing import Any
 from uuid import UUID
 
-from app.db.session import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
 from app.core.security import get_current_membership
-from app.models import Product, Category
+from app.db.session import get_db
+from app.models import Category, Product
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["products"])

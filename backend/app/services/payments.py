@@ -3,9 +3,10 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Payment, Order
+from app.models import Invoice, Order, Payment
 from app.services.orders import OrderValidationError
 
 
@@ -19,8 +20,7 @@ def create_payment(db: Session, organization_id: UUID, order_id: UUID, amount: D
         raise OrderValidationError("Order not found or tenant mismatch")
     if amount <= 0:
         raise PaymentError("Amount must be positive")
-    remaining = order.total
-    paid = sum((p.amount for p in order.payments), Decimal(0))
+    paid = sum((p.amount for p in order.payments if p.status == "COMPLETED"), Decimal(0))
     remaining = order.total - paid
     if amount > remaining:
         raise PaymentError("Payment exceeds remaining balance")
@@ -37,13 +37,25 @@ def create_payment(db: Session, organization_id: UUID, order_id: UUID, amount: D
     db.flush()
 
     # update order payment status
-    paid = sum((p.amount for p in order.payments), Decimal(0))
+    paid = sum((p.amount for p in order.payments if p.status == "COMPLETED"), Decimal(0))
     if paid >= order.total:
         order.payment_status = "PAID"
     elif paid > 0:
         order.payment_status = "PARTIAL"
     else:
         order.payment_status = "UNPAID"
+
+    # sync invoice payment status if invoice exists
+    invoice = db.scalars(select(Invoice).where(Invoice.order_id == order.id)).first()
+    if invoice and invoice.status not in ("VOID", "DRAFT"):
+        invoice.amount_paid = paid
+        if paid >= invoice.total:
+            invoice.status = "PAID"
+        elif paid > 0:
+            invoice.status = "PARTIAL"
+        else:
+            invoice.status = "ISSUED"
+
     db.flush()
     return payment
 
@@ -66,12 +78,24 @@ def refund_payment(db: Session, payment_id: UUID, user) -> Payment:
     order = db.get(Order, payment.order_id)
     if order is None:
         raise PaymentError("Order not found for payment")
-    paid = sum((p.amount for p in order.payments if p.status != "REFUNDED"), Decimal(0))
+    paid = sum((p.amount for p in order.payments if p.status == "COMPLETED"), Decimal(0))
     if paid >= order.total:
         order.payment_status = "PAID"
     elif paid > 0:
         order.payment_status = "PARTIAL"
     else:
         order.payment_status = "UNPAID"
+
+    # sync invoice payment status if invoice exists
+    invoice = db.scalars(select(Invoice).where(Invoice.order_id == order.id)).first()
+    if invoice and invoice.status not in ("VOID", "DRAFT"):
+        invoice.amount_paid = paid
+        if paid >= invoice.total:
+            invoice.status = "PAID"
+        elif paid > 0:
+            invoice.status = "PARTIAL"
+        else:
+            invoice.status = "ISSUED"
+
     db.flush()
     return payment

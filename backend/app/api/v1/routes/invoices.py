@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.core.security import get_current_membership
+from app.db.session import get_db
+from app.schemas.invoices import (
+    InvoiceCreate,
+    InvoiceIssue,
+    InvoicePayment,
+    InvoiceResponse,
+    InvoiceVoid,
+)
+from app.schemas.orders import PaymentResponse
+from app.services import invoices as invoices_service
+from app.services import payments as payments_service
+
+router = APIRouter(prefix="/invoices", tags=["invoices"])
+
+
+@router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
+def create_invoice(
+    payload: InvoiceCreate,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    user = membership.user
+    try:
+        with db.begin_nested():
+            invoice = invoices_service.generate_invoice_from_order(
+                db,
+                organization_id=org_id,
+                order_id=payload.order_id,
+                user=user,
+                due_date=payload.due_date,
+                notes=payload.notes,
+            )
+    except invoices_service.InvoiceValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return invoice
+
+
+@router.get("", response_model=list[InvoiceResponse])
+def list_invoices(
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+    customer_id: UUID | None = None,
+    branch_id: UUID | None = None,
+    invoice_number: str | None = None,
+    date_from=None,
+    date_to=None,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    return invoices_service.list_invoices(
+        db,
+        organization_id=org_id,
+        page=page,
+        page_size=page_size,
+        status=status,
+        customer_id=customer_id,
+        branch_id=branch_id,
+        invoice_number=invoice_number,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+@router.get("/{invoice_id}", response_model=InvoiceResponse)
+def get_invoice(
+    invoice_id: UUID,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    try:
+        invoice = invoices_service.get_invoice(db, org_id, invoice_id)
+    except invoices_service.InvoiceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return invoice
+
+
+@router.post("/{invoice_id}/issue", response_model=InvoiceResponse)
+def issue_invoice(
+    invoice_id: UUID,
+    payload: InvoiceIssue | None = None,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    user = membership.user
+    due_date = payload.due_date if payload else None
+    notes = payload.notes if payload else None
+    try:
+        with db.begin_nested():
+            invoice = invoices_service.issue_invoice(
+                db,
+                organization_id=org_id,
+                invoice_id=invoice_id,
+                user=user,
+                due_date=due_date,
+                notes=notes,
+            )
+    except invoices_service.InvoiceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except invoices_service.InvoiceStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return invoice
+
+
+@router.post("/{invoice_id}/payments", response_model=PaymentResponse)
+def record_invoice_payment(
+    invoice_id: UUID,
+    payload: InvoicePayment,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    user = membership.user
+    try:
+        with db.begin_nested():
+            payment = invoices_service.record_invoice_payment(
+                db,
+                organization_id=org_id,
+                invoice_id=invoice_id,
+                amount=payload.amount,
+                payment_method=payload.payment_method,
+                reference=payload.reference,
+                user=user,
+            )
+    except invoices_service.InvoiceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (invoices_service.InvoiceStateError, payments_service.PaymentError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return payment
+
+
+@router.post("/{invoice_id}/void", response_model=InvoiceResponse)
+def void_invoice(
+    invoice_id: UUID,
+    payload: InvoiceVoid | None = None,
+    membership=Depends(get_current_membership),  # noqa: B008
+    db: Session = Depends(get_db),
+) -> Any:
+    org_id = membership.organization_id
+    user = membership.user
+    notes = payload.notes if payload else None
+    try:
+        with db.begin_nested():
+            invoice = invoices_service.void_invoice(
+                db,
+                organization_id=org_id,
+                invoice_id=invoice_id,
+                user=user,
+                notes=notes,
+            )
+    except invoices_service.InvoiceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except invoices_service.InvoiceStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return invoice

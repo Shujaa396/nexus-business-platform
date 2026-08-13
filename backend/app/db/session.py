@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, text
@@ -5,7 +6,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-import os
 
 SessionLocal = sessionmaker(
     autocommit=False,

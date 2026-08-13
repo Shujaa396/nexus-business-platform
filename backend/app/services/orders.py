@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import select
@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 from app.models import (
     Order,
     OrderItem,
-    Payment,
     OrderStatusHistory,
+    Payment,
     Product,
     User,
 )
-from app.services.inventory import stock_out, stock_in, InsufficientStockError
+from app.services.inventory import InsufficientStockError, stock_in, stock_out
 
 
 class OrderValidationError(Exception):
@@ -102,7 +102,7 @@ def confirm_order(db: Session, order_id: UUID, user: User) -> Order:
                 user=user,
                 notes=f"Order {order.id} confirm",
             )
-    except InsufficientStockError as e:
+    except InsufficientStockError:
         raise
 
     old_status = order.status

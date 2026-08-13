@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 from typing import Any
 from uuid import UUID
 
-from app.db.session import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
 from app.core.security import get_current_membership
+from app.db.session import get_db
 from app.models import Category
 from app.schemas.product import ProductResponse
 

@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_membership
 from app.db.session import get_db
 from app.schemas.customers import CustomerCreate, CustomerResponse
-from app.services.customers import create_customer, get_customer, list_customers, update_customer, deactivate_customer
+from app.services.customers import (
+    create_customer,
+    deactivate_customer,
+    get_customer,
+    list_customers,
+    update_customer,
+)
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 

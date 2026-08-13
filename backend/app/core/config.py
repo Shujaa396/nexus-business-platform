@@ -1,11 +1,11 @@
-from functools import lru_cache
 import os
+import sys
+from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-_is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST"))
+_is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
 
 
 class Settings(BaseSettings):
@@ -32,4 +32,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

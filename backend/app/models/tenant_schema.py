@@ -4,7 +4,17 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +37,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     products: Mapped[list[Product]] = relationship("Product", back_populates="organization")
     customers: Mapped[list[Customer]] = relationship("Customer", back_populates="organization")
     suppliers: Mapped[list[Supplier]] = relationship("Supplier", back_populates="organization")
+    invoices: Mapped[list[Invoice]] = relationship("Invoice", back_populates="organization")
     memberships: Mapped[list[OrganizationMembership]] = relationship(
         "OrganizationMembership",
         back_populates="organization",
@@ -256,7 +267,7 @@ class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization: Mapped[Organization] = relationship("Organization")
     branch: Mapped[Branch] = relationship("Branch")
     product: Mapped[Product] = relationship("Product")
-    transactions: Mapped[list["InventoryTransaction"]] = relationship(
+    transactions: Mapped[list[InventoryTransaction]] = relationship(
         "InventoryTransaction", back_populates="inventory_item", cascade="all, delete-orphan"
     )
 
@@ -329,9 +340,9 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization: Mapped[Organization] = relationship("Organization")
     branch: Mapped[Branch] = relationship("Branch")
     customer: Mapped[Customer] = relationship("Customer")
-    items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
-    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
-    history: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
+    items: Mapped[list[OrderItem]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    payments: Mapped[list[Payment]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
+    history: Mapped[list[OrderStatusHistory]] = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
 
 
 class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -384,3 +395,94 @@ class OrderStatusHistory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
     order: Mapped[Order] = relationship("Order", back_populates="history")
+
+
+class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "invoices"
+    __table_args__ = (
+        Index("ix_invoices_organization_id", "organization_id"),
+        Index("ix_invoices_branch_id", "branch_id"),
+        Index("ix_invoices_customer_id", "customer_id"),
+        Index("ix_invoices_order_id", "order_id"),
+        Index("ix_invoices_invoice_number", "invoice_number"),
+        UniqueConstraint("organization_id", "invoice_number", name="uq_invoices_org_invoice_number"),
+        UniqueConstraint("organization_id", "order_id", name="uq_invoices_org_order"),
+        CheckConstraint(
+            "status IN ('DRAFT', 'ISSUED', 'PARTIAL', 'PAID', 'VOID')",
+            name="ck_invoices_status",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    order_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
+    )
+    customer_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
+    invoice_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    order_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    branch_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    customer_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    customer_email: Mapped[str] = mapped_column(String(255), nullable=True)
+    customer_phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
+    issued_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    amount_paid: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    issued_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="invoices")
+    order: Mapped[Order] = relationship("Order")
+    branch: Mapped[Branch] = relationship("Branch")
+    customer: Mapped[Customer] = relationship("Customer")
+    issuer: Mapped[User] = relationship("User")
+    line_items: Mapped[list[InvoiceLineItem]] = relationship(
+        "InvoiceLineItem", back_populates="invoice", cascade="all, delete-orphan"
+    )
+
+
+class InvoiceLineItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "invoice_line_items"
+    __table_args__ = (
+        Index("ix_invoice_line_items_organization_id", "organization_id"),
+        Index("ix_invoice_line_items_invoice_id", "invoice_id"),
+        Index("ix_invoice_line_items_order_item_id", "order_item_id"),
+        Index("ix_invoice_line_items_product_id", "product_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    invoice_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    order_item_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("order_items.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_sku: Mapped[str] = mapped_column(String(120), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    line_total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    invoice: Mapped[Invoice] = relationship("Invoice", back_populates="line_items")
+    order_item: Mapped[OrderItem] = relationship("OrderItem")
+    organization: Mapped[Organization] = relationship("Organization")
+    product: Mapped[Product] = relationship("Product")

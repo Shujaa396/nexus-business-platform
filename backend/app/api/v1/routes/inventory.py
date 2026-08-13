@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_membership
 from app.db.session import get_db
+from app.models import InventoryItem, InventoryTransaction
 from app.schemas.inventory import (
     InventoryAdjust,
     InventoryItemResponse,
@@ -15,12 +16,11 @@ from app.schemas.inventory import (
     StockOpRequest,
 )
 from app.services.inventory import (
-    adjust_stock,
     InsufficientStockError,
+    adjust_stock,
     stock_in,
     stock_out,
 )
-from app.models import InventoryItem, InventoryTransaction
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 

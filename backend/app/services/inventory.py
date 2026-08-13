@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
     Branch,
     InventoryItem,
     InventoryTransaction,
-    Organization,
     Product,
     User,
 )

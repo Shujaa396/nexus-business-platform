@@ -43,7 +43,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            compare_type=True,
+            compare_type=connection.dialect.name != "sqlite",
         )
 
         with context.begin_transaction():
