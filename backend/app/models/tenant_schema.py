@@ -230,3 +230,69 @@ class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     organization: Mapped[Organization] = relationship("Organization", back_populates="suppliers")
+
+
+class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "inventory_items"
+    __table_args__ = (
+        Index("ix_inventory_items_organization_id", "organization_id"),
+        Index("ix_inventory_items_branch_id", "branch_id"),
+        Index("ix_inventory_items_product_id", "product_id"),
+        UniqueConstraint("organization_id", "branch_id", "product_id", name="uq_inventory_org_branch_product"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0, nullable=False)
+    reorder_level: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization")
+    branch: Mapped[Branch] = relationship("Branch")
+    product: Mapped[Product] = relationship("Product")
+    transactions: Mapped[list["InventoryTransaction"]] = relationship(
+        "InventoryTransaction", back_populates="inventory_item", cascade="all, delete-orphan"
+    )
+
+
+class InventoryTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "inventory_transactions"
+    __table_args__ = (
+        Index("ix_inventory_tx_organization_id", "organization_id"),
+        Index("ix_inventory_tx_branch_id", "branch_id"),
+        Index("ix_inventory_tx_product_id", "product_id"),
+        Index("ix_inventory_tx_created_at", "created_at"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
+    )
+    inventory_item_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False
+    )
+    transaction_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    reference_type: Mapped[str] = mapped_column(String(120), nullable=True)
+    reference_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    inventory_item: Mapped[InventoryItem] = relationship("InventoryItem", back_populates="transactions")
+    organization: Mapped[Organization] = relationship("Organization")
+    branch: Mapped[Branch] = relationship("Branch")
+    product: Mapped[Product] = relationship("Product")
+    creator: Mapped[User] = relationship("User")
