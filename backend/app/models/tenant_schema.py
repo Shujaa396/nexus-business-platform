@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import Boolean, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "organizations"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    roles: Mapped[list[Role]] = relationship("Role", back_populates="organization")
+    branches: Mapped[list[Branch]] = relationship("Branch", back_populates="organization")
+    categories: Mapped[list[Category]] = relationship("Category", back_populates="organization")
+    products: Mapped[list[Product]] = relationship("Product", back_populates="organization")
+    customers: Mapped[list[Customer]] = relationship("Customer", back_populates="organization")
+    suppliers: Mapped[list[Supplier]] = relationship("Supplier", back_populates="organization")
+    memberships: Mapped[list[OrganizationMembership]] = relationship(
+        "OrganizationMembership",
+        back_populates="organization",
+    )
+
+
+class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "users"
+
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    memberships: Mapped[list[OrganizationMembership]] = relationship(
+        "OrganizationMembership",
+        back_populates="user",
+    )
+
+
+class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "roles"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_roles_organization_name"),
+        Index("ix_roles_organization_id", "organization_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    is_system_role: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="roles")
+    memberships: Mapped[list[OrganizationMembership]] = relationship(
+        "OrganizationMembership",
+        back_populates="role",
+    )
+
+
+class OrganizationMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "organization_memberships"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_org_membership_org_user"),
+        Index("ix_org_membership_org_id", "organization_id"),
+        Index("ix_org_membership_user_id", "user_id"),
+        Index("ix_org_membership_role_id", "role_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    role_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("roles.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC), nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="memberships")
+    user: Mapped[User] = relationship("User", back_populates="memberships")
+    role: Mapped[Role] = relationship("Role", back_populates="memberships")
+
+
+class Branch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "branches"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", name="uq_branches_organization_code"),
+        Index("ix_branches_organization_id", "organization_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="branches")
+
+
+class Category(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "categories"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_categories_organization_name"),
+        Index("ix_categories_organization_id", "organization_id"),
+        Index("ix_categories_parent_id", "parent_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    parent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("categories.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="categories")
+    parent: Mapped[Category] = relationship(
+        "Category",
+        remote_side="Category.id",
+        back_populates="children",
+    )
+    children: Mapped[list[Category]] = relationship("Category", back_populates="parent")
+    products: Mapped[list[Product]] = relationship("Product", back_populates="category")
+
+
+class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "products"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "sku", name="uq_products_organization_sku"),
+        Index("ix_products_organization_id", "organization_id"),
+        Index("ix_products_sku", "sku"),
+        Index("ix_products_category_id", "category_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    category_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("categories.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    sku: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    unit: Mapped[str] = mapped_column(String(80), nullable=False)
+    cost_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    selling_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="products")
+    category: Mapped[Category] = relationship("Category", back_populates="products")
+
+
+class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "customers"
+    __table_args__ = (
+        Index("ix_customers_organization_id", "organization_id"),
+        Index("ix_customers_email", "email"),
+        Index("ix_customers_phone", "phone"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="customers")
+
+
+class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "suppliers"
+    __table_args__ = (
+        Index("ix_suppliers_organization_id", "organization_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="suppliers")
