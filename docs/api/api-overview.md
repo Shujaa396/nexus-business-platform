@@ -70,11 +70,20 @@ The backend API is versioned under `/api/v1`.
 | GET | `/api/v1/inventory/{inventory_id}` | Get inventory details |
 | GET | `/api/v1/inventory/{inventory_id}/transactions` | Get movement history (paginated, filterable by type) |
 
+## Phase 7 Dashboard & Reporting Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/dashboard/summary` | Retrieve overall organization business summary metrics |
+| GET | `/api/v1/dashboard/sales` | Sales and revenue analytics (supports preset, custom dates, period_type) |
+| GET | `/api/v1/dashboard/sales/daily` | Shortcut endpoint for daily sales analytics |
+| GET | `/api/v1/dashboard/sales/weekly` | Shortcut endpoint for weekly sales analytics |
+| GET | `/api/v1/dashboard/sales/monthly` | Shortcut endpoint for monthly sales analytics |
+| GET | `/api/v1/dashboard/products` | Product analytics (top selling, highest revenue, low stock, inventory value) |
+| GET | `/api/v1/dashboard/customers` | Customer analytics (totals, new signups, top spenders) |
+| GET | `/api/v1/dashboard/branches` | Branch analytics (order count, revenue, inventory item count & valuation) |
+
 ## Planned API Areas
 
 - Suppliers (CRUD)
-- Purchase orders, sales orders
-- Customers, orders, payments, and invoices
-- Dashboard analytics
-- Audit logs and notifications
 - Controlled AI analytics tools

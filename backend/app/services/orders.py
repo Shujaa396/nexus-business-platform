@@ -22,11 +22,20 @@ class OrderValidationError(Exception):
     pass
 
 
-def create_order(db: Session, organization_id: UUID, branch_id: UUID, created_by: UUID, items: Iterable[dict], notes: str | None = None) -> Order:
+def create_order(
+    db: Session,
+    organization_id: UUID,
+    branch_id: UUID,
+    created_by: UUID,
+    items: Iterable[dict],
+    notes: str | None = None,
+    customer_id: UUID | None = None,
+) -> Order:
     # items: list of {product_id, quantity, unit_price, discount?, tax?}
     order = Order(
         organization_id=organization_id,
         branch_id=branch_id,
+        customer_id=customer_id,
         order_number="TEMP",
         status="DRAFT",
         payment_status="UNPAID",

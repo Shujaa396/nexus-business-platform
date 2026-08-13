@@ -5,6 +5,7 @@ from app.api.v1.routes import (
     branches,
     categories,
     customers,
+    dashboard,
     health,
     inventory,
     invoices,
@@ -25,3 +26,4 @@ api_router.include_router(customers.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(invoices.router)
+api_router.include_router(dashboard.router)

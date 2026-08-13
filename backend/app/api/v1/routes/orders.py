@@ -40,6 +40,7 @@ def create_order(
                 created_by=user.id,
                 items=[it.model_dump() for it in payload.items],
                 notes=payload.notes,
+                customer_id=payload.customer_id,
             )
     except orders_service.OrderValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
