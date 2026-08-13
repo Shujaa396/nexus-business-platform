@@ -1,7 +1,11 @@
 from functools import lru_cache
+import os
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST"))
 
 
 class Settings(BaseSettings):
@@ -13,7 +17,9 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # During pytest runs we avoid loading the .env file so tests can control
+    # environment via monkeypatch without interference from a repo .env file.
+    model_config = SettingsConfigDict(env_file=None if _is_pytest else ".env", extra="ignore")
 
     @property
     def cors_origins(self) -> list[str]:

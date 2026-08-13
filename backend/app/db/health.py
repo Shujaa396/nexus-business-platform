@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.db.session import database_ping
 
 
 def database_health_status() -> dict[str, Any]:
+    settings = get_settings()
     if not settings.database_url:
         return {"status": "not_configured", "database_url_configured": False}
 

@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
+from app.core.config import get_settings
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -14,6 +14,7 @@ SessionLocal = sessionmaker(
 
 
 def get_engine() -> Engine:
+    settings = get_settings()
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is not configured.")
 
@@ -32,6 +33,7 @@ def get_session_factory() -> sessionmaker[Session]:
 
 
 def get_db() -> Generator[Session, None, None]:
+    settings = get_settings()
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is not configured.")
 
@@ -44,6 +46,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def database_ping() -> bool:
+    settings = get_settings()
     if not settings.database_url:
         return False
 
