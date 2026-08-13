@@ -97,7 +97,14 @@ def refresh(payload: RefreshTokenRequest, db: Session = Depends(get_db)) -> Toke
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
 
-    user = db.get(User, token_payload.get("sub"))
+    sub = token_payload.get("sub")
+    try:
+        if isinstance(sub, str):
+            sub = UUID(sub)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
+    user = db.get(User, sub)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 

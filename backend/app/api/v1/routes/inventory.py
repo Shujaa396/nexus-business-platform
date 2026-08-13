@@ -34,7 +34,7 @@ def post_stock_in(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin():
+        with db.begin_nested():
             tx = stock_in(
                 db,
                 organization_id=org_id,
@@ -59,7 +59,7 @@ def post_stock_out(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin():
+        with db.begin_nested():
             tx = stock_out(
                 db,
                 organization_id=org_id,
@@ -86,7 +86,7 @@ def post_adjust(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin():
+        with db.begin_nested():
             tx = adjust_stock(
                 db,
                 organization_id=org_id,

@@ -296,3 +296,91 @@ class InventoryTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branch: Mapped[Branch] = relationship("Branch")
     product: Mapped[Product] = relationship("Product")
     creator: Mapped[User] = relationship("User")
+
+
+class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        Index("ix_orders_organization_id", "organization_id"),
+        Index("ix_orders_branch_id", "branch_id"),
+        Index("ix_orders_order_number", "order_number"),
+        UniqueConstraint("organization_id", "order_number", name="uq_orders_org_order_number"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
+    )
+    customer_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
+    order_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
+    payment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNPAID")
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization: Mapped[Organization] = relationship("Organization")
+    branch: Mapped[Branch] = relationship("Branch")
+    customer: Mapped[Customer] = relationship("Customer")
+    items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
+    history: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "order_items"
+    __table_args__ = (
+        Index("ix_order_items_order_id", "order_id"),
+        Index("ix_order_items_product_id", "product_id"),
+    )
+
+    order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    line_total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    order: Mapped[Order] = relationship("Order", back_populates="items")
+    product: Mapped[Product] = relationship("Product")
+
+
+class Payment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "payments"
+    __table_args__ = (
+        Index("ix_payments_organization_id", "organization_id"),
+        Index("ix_payments_order_id", "order_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    payment_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    reference: Mapped[str] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+
+    order: Mapped[Order] = relationship("Order", back_populates="payments")
+
+
+class OrderStatusHistory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "order_status_history"
+    __table_args__ = (
+        Index("ix_order_status_history_order_id", "order_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    old_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    changed_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    order: Mapped[Order] = relationship("Order", back_populates="history")

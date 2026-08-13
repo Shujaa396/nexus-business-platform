@@ -11,6 +11,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+from uuid import UUID
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -104,7 +105,14 @@ async def get_current_user(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
 
-    user = db.get(User, payload.get("sub"))
+    sub = payload.get("sub")
+    try:
+        if isinstance(sub, str):
+            sub = UUID(sub)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
+    user = db.get(User, sub)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
 
