@@ -21,6 +21,7 @@ from app.services.inventory import (
     stock_in,
     stock_out,
 )
+from app.services.audit import log_activity
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -34,17 +35,28 @@ def post_stock_in(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin_nested():
-            tx = stock_in(
-                db,
-                organization_id=org_id,
-                branch_id=payload.branch_id,
-                product_id=payload.product_id,
-                quantity=Decimal(payload.quantity),
-                user=user,
-                notes=payload.notes,
-            )
+        tx = stock_in(
+            db,
+            organization_id=org_id,
+            branch_id=payload.branch_id,
+            product_id=payload.product_id,
+            quantity=Decimal(payload.quantity),
+            user=user,
+            notes=payload.notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVENTORY_STOCK_ADDED",
+            entity_type="INVENTORY",
+            entity_id=tx.inventory_item_id,
+            details=f"Stocked in {payload.quantity} units for product {payload.product_id} at branch {payload.branch_id}",
+        )
+        db.commit()
+        db.refresh(tx)
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return tx
@@ -59,19 +71,31 @@ def post_stock_out(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin_nested():
-            tx = stock_out(
-                db,
-                organization_id=org_id,
-                branch_id=payload.branch_id,
-                product_id=payload.product_id,
-                quantity=Decimal(payload.quantity),
-                user=user,
-                notes=payload.notes,
-            )
+        tx = stock_out(
+            db,
+            organization_id=org_id,
+            branch_id=payload.branch_id,
+            product_id=payload.product_id,
+            quantity=Decimal(payload.quantity),
+            user=user,
+            notes=payload.notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVENTORY_STOCK_REMOVED",
+            entity_type="INVENTORY",
+            entity_id=tx.inventory_item_id,
+            details=f"Stocked out {payload.quantity} units for product {payload.product_id} at branch {payload.branch_id}",
+        )
+        db.commit()
+        db.refresh(tx)
     except InsufficientStockError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return tx
@@ -86,20 +110,32 @@ def post_adjust(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin_nested():
-            tx = adjust_stock(
-                db,
-                organization_id=org_id,
-                branch_id=payload.branch_id,
-                product_id=payload.product_id,
-                quantity=Decimal(payload.quantity),
-                direction=payload.direction,
-                user=user,
-                notes=payload.notes,
-            )
+        tx = adjust_stock(
+            db,
+            organization_id=org_id,
+            branch_id=payload.branch_id,
+            product_id=payload.product_id,
+            quantity=Decimal(payload.quantity),
+            direction=payload.direction,
+            user=user,
+            notes=payload.notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVENTORY_STOCK_ADJUSTED",
+            entity_type="INVENTORY",
+            entity_id=tx.inventory_item_id,
+            details=f"Adjusted stock ({payload.direction}) by {payload.quantity} units for product {payload.product_id} at branch {payload.branch_id}",
+        )
+        db.commit()
+        db.refresh(tx)
     except InsufficientStockError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return tx

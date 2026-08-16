@@ -10,7 +10,10 @@ _is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
 
 class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
-    cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    cors_origins_raw: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:8000,http://127.0.0.1:8000",
+        alias="CORS_ORIGINS",
+    )
     database_url: str = Field(default="", alias="DATABASE_URL")
     jwt_secret: str = Field(default="change-me", alias="JWT_SECRET")
     jwt_refresh_secret: str = Field(default="change-me-refresh", alias="JWT_REFRESH_SECRET")

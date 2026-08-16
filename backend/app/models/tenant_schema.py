@@ -486,3 +486,32 @@ class InvoiceLineItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     order_item: Mapped[OrderItem] = relationship("OrderItem")
     organization: Mapped[Organization] = relationship("Organization")
     product: Mapped[Product] = relationship("Product")
+
+
+class AuditLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_organization_id", "organization_id"),
+        Index("ix_audit_logs_user_id", "user_id"),
+        Index("ix_audit_logs_action", "action"),
+        Index("ix_audit_logs_entity_type", "entity_type"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    user_email: Mapped[str] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    details: Mapped[str] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str] = mapped_column(String(80), nullable=True)
+
+    organization: Mapped[Organization] = relationship("Organization")
+    user: Mapped[User] = relationship("User")
+
+
+

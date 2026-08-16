@@ -18,6 +18,7 @@ from app.schemas.invoices import (
 from app.schemas.orders import PaymentResponse
 from app.services import invoices as invoices_service
 from app.services import payments as payments_service
+from app.services.audit import log_activity
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -31,16 +32,27 @@ def create_invoice(
     org_id = membership.organization_id
     user = membership.user
     try:
-        with db.begin_nested():
-            invoice = invoices_service.generate_invoice_from_order(
-                db,
-                organization_id=org_id,
-                order_id=payload.order_id,
-                user=user,
-                due_date=payload.due_date,
-                notes=payload.notes,
-            )
+        invoice = invoices_service.generate_invoice_from_order(
+            db,
+            organization_id=org_id,
+            order_id=payload.order_id,
+            user=user,
+            due_date=payload.due_date,
+            notes=payload.notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVOICE_CREATED",
+            entity_type="INVOICE",
+            entity_id=invoice.id,
+            details=f"Generated invoice {invoice.invoice_number} (Total: {invoice.total})",
+        )
+        db.commit()
+        db.refresh(invoice)
     except invoices_service.InvoiceValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return invoice
 
@@ -99,18 +111,30 @@ def issue_invoice(
     due_date = payload.due_date if payload else None
     notes = payload.notes if payload else None
     try:
-        with db.begin_nested():
-            invoice = invoices_service.issue_invoice(
-                db,
-                organization_id=org_id,
-                invoice_id=invoice_id,
-                user=user,
-                due_date=due_date,
-                notes=notes,
-            )
+        invoice = invoices_service.issue_invoice(
+            db,
+            organization_id=org_id,
+            invoice_id=invoice_id,
+            user=user,
+            due_date=due_date,
+            notes=notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVOICE_ISSUED",
+            entity_type="INVOICE",
+            entity_id=invoice.id,
+            details=f"Issued invoice {invoice.invoice_number}",
+        )
+        db.commit()
+        db.refresh(invoice)
     except invoices_service.InvoiceNotFoundError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except invoices_service.InvoiceStateError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return invoice
 
@@ -125,19 +149,31 @@ def record_invoice_payment(
     org_id = membership.organization_id
     user = membership.user
     try:
-        with db.begin_nested():
-            payment = invoices_service.record_invoice_payment(
-                db,
-                organization_id=org_id,
-                invoice_id=invoice_id,
-                amount=payload.amount,
-                payment_method=payload.payment_method,
-                reference=payload.reference,
-                user=user,
-            )
+        payment = invoices_service.record_invoice_payment(
+            db,
+            organization_id=org_id,
+            invoice_id=invoice_id,
+            amount=payload.amount,
+            payment_method=payload.payment_method,
+            reference=payload.reference,
+            user=user,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="PAYMENT_RECORDED",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            details=f"Recorded payment of {payment.amount} for invoice {invoice_id} ({payment.payment_method})",
+        )
+        db.commit()
+        db.refresh(payment)
     except invoices_service.InvoiceNotFoundError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (invoices_service.InvoiceStateError, payments_service.PaymentError) as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return payment
 
@@ -153,16 +189,28 @@ def void_invoice(
     user = membership.user
     notes = payload.notes if payload else None
     try:
-        with db.begin_nested():
-            invoice = invoices_service.void_invoice(
-                db,
-                organization_id=org_id,
-                invoice_id=invoice_id,
-                user=user,
-                notes=notes,
-            )
+        invoice = invoices_service.void_invoice(
+            db,
+            organization_id=org_id,
+            invoice_id=invoice_id,
+            user=user,
+            notes=notes,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="INVOICE_VOIDED",
+            entity_type="INVOICE",
+            entity_id=invoice.id,
+            details=f"Voided invoice {invoice.invoice_number}",
+        )
+        db.commit()
+        db.refresh(invoice)
     except invoices_service.InvoiceNotFoundError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except invoices_service.InvoiceStateError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return invoice

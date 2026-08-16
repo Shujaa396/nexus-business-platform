@@ -10,6 +10,7 @@ from app.core.security import get_current_membership
 from app.db.session import get_db
 from app.models import Category, Product
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.services.audit import log_activity
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -41,6 +42,15 @@ def create_product(payload: ProductCreate, membership=Depends(get_current_member
         is_active=True,
     )
     db.add(product)
+    log_activity(
+        db,
+        organization_id=org_id,
+        user=membership.user,
+        action="PRODUCT_CREATED",
+        entity_type="PRODUCT",
+        entity_id=product.id,
+        details=f"Created product {product.name} (SKU: {product.sku})",
+    )
     db.commit()
     db.refresh(product)
     return product
@@ -82,6 +92,15 @@ def update_product(product_id: UUID, payload: ProductUpdate, membership=Depends(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
     db.add(product)
+    log_activity(
+        db,
+        organization_id=org_id,
+        user=membership.user,
+        action="PRODUCT_UPDATED",
+        entity_type="PRODUCT",
+        entity_id=product.id,
+        details=f"Updated product {product.name} (SKU: {product.sku})",
+    )
     db.commit()
     db.refresh(product)
     return product
@@ -95,5 +114,14 @@ def delete_product(product_id: UUID, membership=Depends(get_current_membership),
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     product.is_active = False
     db.add(product)
+    log_activity(
+        db,
+        organization_id=org_id,
+        user=membership.user,
+        action="PRODUCT_DEACTIVATED",
+        entity_type="PRODUCT",
+        entity_id=product.id,
+        details=f"Deactivated product {product.name} (SKU: {product.sku})",
+    )
     db.commit()
     return {"status": "ok"}

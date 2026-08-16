@@ -155,3 +155,35 @@ async def get_current_membership(
         )
 
     return membership
+
+
+async def require_admin(
+    membership: OrganizationMembership = Depends(get_current_membership),
+) -> OrganizationMembership:
+    if membership.user.is_superadmin:
+        return membership
+    role_name = membership.role.name.lower() if membership.role else "staff"
+    if role_name != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required for this action",
+        )
+    return membership
+
+
+def require_role(allowed_roles: list[str]):
+    async def _role_checker(
+        membership: OrganizationMembership = Depends(get_current_membership),
+    ) -> OrganizationMembership:
+        if membership.user.is_superadmin:
+            return membership
+        role_name = membership.role.name.lower() if membership.role else "staff"
+        normalized_allowed = [r.lower() for r in allowed_roles]
+        if role_name not in normalized_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Requires one of roles: {', '.join(allowed_roles)}",
+            )
+        return membership
+
+    return _role_checker

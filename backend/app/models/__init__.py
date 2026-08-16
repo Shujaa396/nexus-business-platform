@@ -17,6 +17,7 @@ from app.models.tenant_schema import (
     Role,
     Supplier,
     User,
+    AuditLog,
 )
 
 __all__ = [
@@ -38,5 +39,7 @@ __all__ = [
     "Role",
     "Supplier",
     "User",
+    "AuditLog",
 ]
+
 

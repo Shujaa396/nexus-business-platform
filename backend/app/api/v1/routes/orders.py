@@ -19,6 +19,7 @@ from app.schemas.orders import (
 )
 from app.services import orders as orders_service
 from app.services import payments as payments_service
+from app.services.audit import log_activity
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -32,17 +33,28 @@ def create_order(
     org_id = membership.organization_id
     user = membership.user
     try:
-        with db.begin_nested():
-            order = orders_service.create_order(
-                db,
-                organization_id=org_id,
-                branch_id=payload.branch_id,
-                created_by=user.id,
-                items=[it.model_dump() for it in payload.items],
-                notes=payload.notes,
-                customer_id=payload.customer_id,
-            )
+        order = orders_service.create_order(
+            db,
+            organization_id=org_id,
+            branch_id=payload.branch_id,
+            created_by=user.id,
+            items=[it.model_dump() for it in payload.items],
+            notes=payload.notes,
+            customer_id=payload.customer_id,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="ORDER_CREATED",
+            entity_type="ORDER",
+            entity_id=order.id,
+            details=f"Created order {order.order_number} (Total: {order.total})",
+        )
+        db.commit()
+        db.refresh(order)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return order
 
@@ -85,14 +97,26 @@ def confirm_order(
 ) -> Any:
     user = membership.user
     try:
-        with db.begin_nested():
-            order = orders_service.confirm_order(db, order_id, user)
+        order = orders_service.confirm_order(db, order_id, user)
+        if order.organization_id != membership.organization_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        log_activity(
+            db,
+            organization_id=order.organization_id,
+            user=user,
+            action="ORDER_STATUS_CHANGED",
+            entity_type="ORDER",
+            entity_id=order.id,
+            details=f"Confirmed order {order.order_number} (Status: CONFIRMED)",
+        )
+        db.commit()
+        db.refresh(order)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except orders_service.InsufficientStockError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if order.organization_id != membership.organization_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
     return order
 
 
@@ -104,12 +128,23 @@ def cancel_order(
 ) -> Any:
     user = membership.user
     try:
-        with db.begin_nested():
-            order = orders_service.cancel_order(db, order_id, user)
+        order = orders_service.cancel_order(db, order_id, user)
+        if order.organization_id != membership.organization_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        log_activity(
+            db,
+            organization_id=order.organization_id,
+            user=user,
+            action="ORDER_CANCELLED",
+            entity_type="ORDER",
+            entity_id=order.id,
+            details=f"Cancelled order {order.order_number}",
+        )
+        db.commit()
+        db.refresh(order)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if order.organization_id != membership.organization_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
     return order
 
 
@@ -123,17 +158,28 @@ def add_payment(
     user = membership.user
     org_id = membership.organization_id
     try:
-        with db.begin_nested():
-            payment = payments_service.create_payment(
-                db=db,
-                organization_id=org_id,
-                order_id=order_id,
-                amount=Decimal(payload.amount),
-                payment_method=payload.payment_method,
-                reference=payload.reference,
-                user=user,
-            )
+        payment = payments_service.create_payment(
+            db=db,
+            organization_id=org_id,
+            order_id=order_id,
+            amount=Decimal(payload.amount),
+            payment_method=payload.payment_method,
+            reference=payload.reference,
+            user=user,
+        )
+        log_activity(
+            db,
+            organization_id=org_id,
+            user=user,
+            action="PAYMENT_RECORDED",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            details=f"Recorded payment of {payment.amount} for order {order_id} ({payment.payment_method})",
+        )
+        db.commit()
+        db.refresh(payment)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return payment
 
@@ -159,13 +205,24 @@ def patch_order(
 ) -> Any:
     user = membership.user
     try:
-        with db.begin_nested():
-            items = [it.model_dump() for it in payload.items] if payload.items is not None else None
-            order = orders_service.update_order(db, order_id, user, customer_id=payload.customer_id, items=items, notes=payload.notes)
+        items = [it.model_dump() for it in payload.items] if payload.items is not None else None
+        order = orders_service.update_order(db, order_id, user, customer_id=payload.customer_id, items=items, notes=payload.notes)
+        if order.organization_id != membership.organization_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        log_activity(
+            db,
+            organization_id=order.organization_id,
+            user=user,
+            action="ORDER_UPDATED",
+            entity_type="ORDER",
+            entity_id=order.id,
+            details=f"Updated order {order.order_number}",
+        )
+        db.commit()
+        db.refresh(order)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if order.organization_id != membership.organization_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
     return order
 
 
@@ -177,12 +234,23 @@ def complete_order(
 ) -> Any:
     user = membership.user
     try:
-        with db.begin():
-            order = orders_service.complete_order(db, order_id, user)
+        order = orders_service.complete_order(db, order_id, user)
+        if order.organization_id != membership.organization_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        log_activity(
+            db,
+            organization_id=order.organization_id,
+            user=user,
+            action="ORDER_STATUS_CHANGED",
+            entity_type="ORDER",
+            entity_id=order.id,
+            details=f"Completed order {order.order_number} (Status: COMPLETED)",
+        )
+        db.commit()
+        db.refresh(order)
     except orders_service.OrderValidationError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if order.organization_id != membership.organization_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
     return order
 
 
