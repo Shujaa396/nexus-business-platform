@@ -99,8 +99,13 @@ const navigation = [
     items: [
       {
         label: "Analytics",
-        href: "/reports",
+        href: "/analytics",
         icon: BarChart3,
+      },
+      {
+        label: "Reports",
+        href: "/reports",
+        icon: FileText,
       },
       {
         label: "Audit Logs",

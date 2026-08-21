@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -84,6 +85,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/analytics"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
+            >
+              <TrendingUp className="h-3.5 w-3.5" />
+              Open Analytics
+            </Link>
             <button
               type="button"
               onClick={() => {
