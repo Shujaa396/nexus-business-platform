@@ -186,6 +186,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("categories.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    supplier_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     sku: Mapped[str] = mapped_column(String(120), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
@@ -197,6 +202,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     organization: Mapped[Organization] = relationship("Organization", back_populates="products")
     category: Mapped[Category] = relationship("Category", back_populates="products")
+    supplier: Mapped[Supplier] = relationship("Supplier")
 
 
 class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):

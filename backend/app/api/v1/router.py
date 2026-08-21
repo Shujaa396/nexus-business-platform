@@ -14,6 +14,7 @@ from app.api.v1.routes import (
     organization,
     payments,
     products,
+    suppliers,
 )
 
 api_router = APIRouter()
@@ -27,6 +28,7 @@ api_router.include_router(products.router)
 api_router.include_router(categories.router)
 api_router.include_router(branches.router)
 api_router.include_router(customers.router)
+api_router.include_router(suppliers.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(invoices.router)

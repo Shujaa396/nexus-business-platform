@@ -15,6 +15,7 @@ class ProductCreate(BaseModel):
     selling_price: Decimal
     tax_rate: Decimal | None = Field(default=0)
     category_id: UUID | None = None
+    supplier_id: UUID | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -26,6 +27,7 @@ class ProductUpdate(BaseModel):
     tax_rate: Decimal | None = None
     is_active: bool | None = None
     category_id: UUID | None = None
+    supplier_id: UUID | None = None
 
 
 class ProductResponse(BaseModel):
@@ -38,6 +40,7 @@ class ProductResponse(BaseModel):
     selling_price: Decimal
     tax_rate: Decimal
     category_id: UUID | None
+    supplier_id: UUID | None
     is_active: bool
 
     model_config = {"from_attributes": True}

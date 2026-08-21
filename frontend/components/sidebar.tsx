@@ -17,6 +17,7 @@ import {
   Users,
   Wallet,
   X,
+  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -70,6 +71,11 @@ const navigation = [
         label: "Categories",
         href: "/categories",
         icon: ClipboardList,
+      },
+      {
+        label: "Suppliers",
+        href: "/suppliers",
+        icon: Truck,
       },
     ],
   },

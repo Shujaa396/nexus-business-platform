@@ -8,6 +8,7 @@ export type Product = {
   selling_price: string | number;
   tax_rate: string | number;
   category_id: string | null;
+  supplier_id: string | null;
   is_active: boolean;
 };
 
@@ -20,6 +21,7 @@ export type ProductCreate = {
   selling_price: number;
   tax_rate?: number;
   category_id?: string;
+  supplier_id?: string;
 };
 
 export type ProductUpdate = {
@@ -31,6 +33,7 @@ export type ProductUpdate = {
   tax_rate?: number;
   is_active?: boolean;
   category_id?: string;
+  supplier_id?: string;
 };
 
 export type Category = {

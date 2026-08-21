@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_membership
 from app.db.session import get_db
-from app.models import Category, Product
+from app.models import Category, Product, Supplier
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 from app.services.audit import log_activity
 
@@ -23,6 +23,12 @@ def create_product(payload: ProductCreate, membership=Depends(get_current_member
         cat = db.get(Category, payload.category_id)
         if cat is None or cat.organization_id != org_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category")
+
+    # validate supplier ownership
+    if payload.supplier_id:
+        sup = db.get(Supplier, payload.supplier_id)
+        if sup is None or sup.organization_id != org_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid supplier")
 
     # unique SKU per org
     existing = db.query(Product).filter(Product.organization_id == org_id, Product.sku == payload.sku).first()
@@ -39,6 +45,7 @@ def create_product(payload: ProductCreate, membership=Depends(get_current_member
         selling_price=payload.selling_price,
         tax_rate=payload.tax_rate or 0,
         category_id=payload.category_id,
+        supplier_id=payload.supplier_id,
         is_active=True,
     )
     db.add(product)
@@ -88,6 +95,11 @@ def update_product(product_id: UUID, payload: ProductUpdate, membership=Depends(
         cat = db.get(Category, payload.category_id)
         if cat is None or cat.organization_id != org_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category")
+
+    if payload.supplier_id:
+        sup = db.get(Supplier, payload.supplier_id)
+        if sup is None or sup.organization_id != org_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid supplier")
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
