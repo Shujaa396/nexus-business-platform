@@ -52,6 +52,11 @@ const navigation = [
         href: "/payments",
         icon: Wallet,
       },
+      {
+        label: "Purchase Orders",
+        href: "/purchase-orders",
+        icon: ClipboardList,
+      },
     ],
   },
   {

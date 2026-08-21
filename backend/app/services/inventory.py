@@ -52,7 +52,18 @@ def _lock_inventory_item(db: Session, item_id: UUID) -> InventoryItem | None:
     return db.execute(stmt).scalars().first()
 
 
-def stock_in(db: Session, *, organization_id: UUID, branch_id: UUID, product_id: UUID, quantity: Decimal, user: User, notes: str | None = None) -> InventoryTransaction:
+def stock_in(
+    db: Session,
+    *,
+    organization_id: UUID,
+    branch_id: UUID,
+    product_id: UUID,
+    quantity: Decimal,
+    user: User,
+    notes: str | None = None,
+    reference_type: str | None = None,
+    reference_id: UUID | None = None,
+) -> InventoryTransaction:
     # validate ownership
     product = db.get(Product, product_id)
     branch = db.get(Branch, branch_id)
@@ -76,6 +87,8 @@ def stock_in(db: Session, *, organization_id: UUID, branch_id: UUID, product_id:
         inventory_item_id=item_locked.id,
         transaction_type="STOCK_IN",
         quantity=quantity,
+        reference_type=reference_type,
+        reference_id=reference_id,
         notes=notes,
         created_by=user.id,
     )

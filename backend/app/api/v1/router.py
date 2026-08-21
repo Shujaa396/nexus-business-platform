@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
+    analytics,
     audit_logs,
     auth,
     branches,
     categories,
     customers,
     dashboard,
-    analytics,
     health,
     inventory,
     invoices,
@@ -15,6 +15,7 @@ from app.api.v1.routes import (
     organization,
     payments,
     products,
+    purchase_orders,
     suppliers,
 )
 
@@ -30,6 +31,7 @@ api_router.include_router(categories.router)
 api_router.include_router(branches.router)
 api_router.include_router(customers.router)
 api_router.include_router(suppliers.router)
+api_router.include_router(purchase_orders.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(invoices.router)

@@ -85,5 +85,47 @@ The backend API is versioned under `/api/v1`.
 
 ## Planned API Areas
 
-- Suppliers (CRUD)
-- Controlled AI analytics tools
+## Phase 8 Supplier Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/suppliers` | Create an organization supplier |
+| GET | `/api/v1/suppliers` | List tenant suppliers with search and pagination |
+| GET | `/api/v1/suppliers/{supplier_id}` | Retrieve a tenant supplier |
+| PATCH | `/api/v1/suppliers/{supplier_id}` | Update a supplier |
+| DELETE | `/api/v1/suppliers/{supplier_id}` | Deactivate a supplier |
+
+## Phase 9 Controlled Analytics Endpoints
+
+Analytics endpoints require authentication and an `admin` or `manager` organization role. All results are tenant-scoped and analytics access is audit logged.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/analytics/sales-summary` | Sales total, order count, and average order value |
+| GET | `/api/v1/analytics/sales-trend` | Daily, weekly, or monthly sales trend |
+| GET | `/api/v1/analytics/top-products` | Products ranked by quantity and revenue |
+| GET | `/api/v1/analytics/top-customers` | Customers ranked by order count and revenue |
+| GET | `/api/v1/analytics/branches` | Sales and orders by branch |
+| GET | `/api/v1/analytics/inventory` | Low-stock, out-of-stock, and inventory value |
+| GET | `/api/v1/analytics/payments` | Payment totals by method and status |
+| GET | `/api/v1/analytics/invoices` | Invoice totals, statuses, and overdue count |
+| GET | `/api/v1/analytics/suppliers` | Supplier-linked product and inventory statistics |
+| POST | `/api/v1/analytics/query` | Deterministic natural-language dispatch to an allowlisted intent |
+
+Analytics accepts structured filters only: `date_from`, `date_to`, `branch_id`, `limit` (1-50), and `period`. Date ranges are limited to 366 days. Unsupported natural-language questions return a safe unsupported response. No raw SQL or arbitrary query expressions are accepted.
+
+## Phase 10 Purchase Order Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/purchase-orders` | Create a draft purchase order with validated supplier/product lines |
+| GET | `/api/v1/purchase-orders` | List purchase orders with supplier, branch, status, date, number, and pagination filters |
+| GET | `/api/v1/purchase-orders/{purchase_order_id}` | Retrieve a tenant-scoped purchase order and items |
+| PATCH | `/api/v1/purchase-orders/{purchase_order_id}` | Update a draft purchase order |
+| POST | `/api/v1/purchase-orders/{purchase_order_id}/submit` | Move a draft order to submitted |
+| POST | `/api/v1/purchase-orders/{purchase_order_id}/approve` | Approve a submitted order |
+| POST | `/api/v1/purchase-orders/{purchase_order_id}/cancel` | Cancel an eligible order |
+| POST | `/api/v1/purchase-orders/{purchase_order_id}/receive` | Atomically receive stock into the order branch inventory |
+| GET | `/api/v1/purchase-orders/{purchase_order_id}/items` | List purchase order items |
+
+Purchase order writes and receiving require `admin` or `manager`. Staff can list and view purchase orders. Receiving is limited to remaining quantities and requires a receipt reference to prevent duplicate processing.

@@ -9,6 +9,7 @@ import type {
   InvoiceSummary,
   NaturalLanguageResponse,
   PaymentSummary,
+  ProcurementSummary,
   SalesSummary,
   SalesTrend,
   SupplierSummary,
@@ -26,6 +27,7 @@ const endpoints: Record<AnalyticsIntent, string> = {
   payment_summary: "/analytics/payments",
   invoice_summary: "/analytics/invoices",
   supplier_summary: "/analytics/suppliers",
+  procurement_summary: "/analytics/procurement",
 };
 
 function queryString(filters: AnalyticsFilters = {}): string {
@@ -47,7 +49,7 @@ export async function getAnalytics<T>(
 export async function getAnalyticsDashboard(
   filters: AnalyticsFilters,
 ): Promise<AnalyticsDashboardData> {
-  const [summary, trend, products, customers, branches, inventory, payments, invoices, suppliers] = await Promise.all([
+  const [summary, trend, products, customers, branches, inventory, payments, invoices, suppliers, procurement] = await Promise.all([
     getAnalytics<SalesSummary>("sales_summary", filters),
     getAnalytics<SalesTrend>("sales_trend", filters),
     getAnalytics<TopProducts>("top_products", filters),
@@ -57,8 +59,9 @@ export async function getAnalyticsDashboard(
     getAnalytics<PaymentSummary>("payment_summary", filters),
     getAnalytics<InvoiceSummary>("invoice_summary", filters),
     getAnalytics<SupplierSummary>("supplier_summary", filters),
+    getAnalytics<ProcurementSummary>("procurement_summary", filters),
   ]);
-  return { summary, trend, products, customers, branches, inventory, payments, invoices, suppliers };
+  return { summary, trend, products, customers, branches, inventory, payments, invoices, suppliers, procurement };
 }
 
 export async function askAnalytics(question: string): Promise<NaturalLanguageResponse> {

@@ -18,6 +18,7 @@ from app.models import (
     OrderItem,
     Payment,
     Product,
+    PurchaseOrder,
     Supplier,
 )
 from app.schemas.analytics import AnalyticsFilters, AnalyticsIntent, normalized_range
@@ -217,6 +218,38 @@ def supplier_summary(db: Session, organization_id: UUID, filters: AnalyticsFilte
     return {"suppliers": sorted(grouped.values(), key=lambda row: row["product_count"], reverse=True)[: filters.limit]}
 
 
+def procurement_summary(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    start, end = normalized_range(filters)
+    query = db.query(PurchaseOrder, Supplier).join(Supplier, Supplier.id == PurchaseOrder.supplier_id).filter(
+        PurchaseOrder.organization_id == organization_id,
+        Supplier.organization_id == organization_id,
+        PurchaseOrder.order_date >= start,
+        PurchaseOrder.order_date <= end,
+    )
+    if filters.branch_id:
+        query = query.filter(PurchaseOrder.branch_id == filters.branch_id)
+    orders = query.all()
+    status_counts: dict[str, int] = defaultdict(int)
+    supplier_totals: dict[UUID, dict[str, Any]] = {}
+    purchasing_total = Decimal(0)
+    for order, supplier in orders:
+        status_counts[order.status] += 1
+        if order.status != "CANCELLED":
+            purchasing_total += _money(order.total)
+        row = supplier_totals.setdefault(supplier.id, {"supplier_id": supplier.id, "supplier_name": supplier.name, "purchase_order_count": 0, "purchasing_total": Decimal(0)})
+        row["purchase_order_count"] += 1
+        if order.status != "CANCELLED":
+            row["purchasing_total"] += _money(order.total)
+    return {
+        "purchase_order_count": len(orders),
+        "pending_approvals": status_counts.get("SUBMITTED", 0),
+        "pending_receipts": status_counts.get("APPROVED", 0) + status_counts.get("PARTIALLY_RECEIVED", 0),
+        "purchasing_total": purchasing_total,
+        "status_counts": dict(status_counts),
+        "top_suppliers": sorted(supplier_totals.values(), key=lambda row: row["purchasing_total"], reverse=True)[: filters.limit],
+    }
+
+
 def execute(db: Session, organization_id: UUID, intent: AnalyticsIntent, filters: AnalyticsFilters) -> tuple[datetime, datetime, dict[str, Any]]:
     operations = {
         "sales_summary": sales_summary,
@@ -228,6 +261,7 @@ def execute(db: Session, organization_id: UUID, intent: AnalyticsIntent, filters
         "payment_summary": payment_summary,
         "invoice_summary": invoice_summary,
         "supplier_summary": supplier_summary,
+        "procurement_summary": procurement_summary,
     }
     start, end = normalized_range(filters)
     return start, end, operations[intent](db, organization_id, filters)

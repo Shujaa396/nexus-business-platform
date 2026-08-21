@@ -1,5 +1,6 @@
 from app.db.base import Base
 from app.models.tenant_schema import (
+    AuditLog,
     Branch,
     Category,
     Customer,
@@ -14,13 +15,15 @@ from app.models.tenant_schema import (
     OrganizationMembership,
     Payment,
     Product,
+    PurchaseOrder,
+    PurchaseOrderItem,
     Role,
     Supplier,
     User,
-    AuditLog,
 )
 
 __all__ = [
+    "AuditLog",
     "Base",
     "Branch",
     "Category",
@@ -38,8 +41,9 @@ __all__ = [
     "OrderStatusHistory",
     "Role",
     "Supplier",
+    "PurchaseOrder",
+    "PurchaseOrderItem",
     "User",
-    "AuditLog",
 ]
 
 

@@ -2,7 +2,15 @@
 
 The production database is a remote Supabase-hosted PostgreSQL instance and is accessed through the `DATABASE_URL` environment variable.
 
-This repository has completed Phases 0-5 and is implementing Phase 6: Invoices and Invoice Management.
+This repository has completed Phases 0-8 and is implementing Phase 9: Controlled AI Analytics and Business Intelligence.
+
+## Phase 9 Analytics Storage
+
+Phase 9 requires no new tables or migration. Analytics reads existing tenant-scoped orders, order items, customers, branches, inventory items, payments, invoices, products, and supplier relationships. Query history is represented by the existing `audit_logs` table; raw questions are not persisted.
+
+## Phase 10 Procurement Tables
+
+Phase 10 adds `purchase_orders` and `purchase_order_items`. Purchase orders reference existing tenant-scoped suppliers, branches, and users. Items reference existing products and store ordered quantity, received quantity, unit cost, and calculated subtotal. Receiving writes `inventory_transactions` with `reference_type = PURCHASE_ORDER_RECEIPT` and the purchase order ID, then updates inventory atomically. No supplier or product tables are duplicated.
 
 ## Production Database Strategy
 

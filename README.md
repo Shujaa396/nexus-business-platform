@@ -2,7 +2,7 @@
 
 NEXUS is a multi-branch business management and analytics platform built as a production-style full-stack monorepo. The system is planned around a Next.js frontend, FastAPI backend, Supabase-hosted PostgreSQL database, Redis-backed infrastructure features, and controlled AI-assisted business analytics.
 
-This repository is currently at **Phase 1: Database Foundation**. Business tables, authentication, inventory, POS, invoices, analytics, and AI workflows are intentionally not implemented yet.
+This repository is currently at **Phase 10: Procurement & Purchase Order Management**. The platform includes multi-tenant authentication, RBAC, inventory, sales, invoicing, supplier management, procurement, reporting, and controlled analytics over approved internal business data.
 
 ## Tech Stack
 
@@ -138,6 +138,14 @@ When the backend is running, FastAPI exposes OpenAPI documentation at:
 
 - `http://localhost:8000/docs`
 - `http://localhost:8000/redoc`
+
+## Controlled Analytics
+
+Analytics is available to organization administrators and managers through the dedicated `/analytics` workspace. It supports allowlisted sales, trend, product, customer, branch, inventory, payment, invoice, and supplier reports. The Ask Analytics interface uses a deterministic intent parser and can only dispatch to those predefined operations.
+
+Analytics never accepts raw SQL, arbitrary code, database credentials, or unrestricted model/tool calls. Every operation is scoped to the authenticated organization and analytics access is recorded in the audit log.
+
+Purchase Orders connect Phase 8 suppliers to inventory receiving through an admin/manager-controlled workflow: `DRAFT`, `SUBMITTED`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, and `CANCELLED`. Receiving is atomic, cannot exceed ordered quantities, and uses receipt references to prevent duplicate stock increases.
 
 ## Security Notes
 

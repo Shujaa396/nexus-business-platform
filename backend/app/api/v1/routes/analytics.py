@@ -150,6 +150,15 @@ def suppliers(
     return _execute(AnalyticsQueryRequest(intent="supplier_summary", **filters.model_dump()), membership, db)
 
 
+@router.get("/procurement", response_model=AnalyticsResponse)
+def procurement(
+    filters: AnalyticsFilters = Depends(_filters),
+    membership=Depends(require_role(["admin", "manager"])),
+    db: Session = Depends(get_db),
+) -> Any:
+    return _execute(AnalyticsQueryRequest(intent="procurement_summary", **filters.model_dump()), membership, db)
+
+
 @router.post("/query", response_model=NaturalLanguageQueryResponse)
 def natural_language_query(
     payload: NaturalLanguageQueryRequest,

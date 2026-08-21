@@ -132,6 +132,7 @@ export default function AnalyticsPage() {
               <StatCard label="Orders" value={formatNumber(data.summary.data.order_count)} description="Orders in selected range" icon={BarChart3} />
               <StatCard label="Average Order" value={formatCurrency(data.summary.data.average_order_value)} description="Sales per completed order" icon={Users} />
               <StatCard label="Inventory Value" value={formatCurrency(data.inventory.data.inventory_value)} description="Current cost valuation" icon={Package} />
+              <StatCard label="Purchase Orders" value={formatNumber(data.procurement.data.purchase_order_count)} description="Orders in selected range" icon={BarChart3} />
             </section>
 
             <section className="grid gap-6 lg:grid-cols-3">
@@ -166,6 +167,7 @@ export default function AnalyticsPage() {
             </section>
 
             <section className="rounded-xl border border-border bg-white p-5 shadow-sm"><h2 className="text-base font-semibold text-slate-950">Supplier Coverage</h2><p className="mt-1 text-xs text-slate-500">Products connected to Phase 8 supplier records.</p><AnalyticsTable headers={["Supplier", "Products", "Inventory value"]} rows={data.suppliers.data.suppliers.map((item) => [item.supplier_name, formatNumber(item.product_count), formatCurrency(item.inventory_value)])} /></section>
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm"><h2 className="text-base font-semibold text-slate-950">Procurement Summary</h2><div className="mt-4 grid gap-3 sm:grid-cols-4"><MetricLine label="Purchasing total" value={formatCurrency(data.procurement.data.purchasing_total)} /><MetricLine label="Pending approvals" value={formatNumber(data.procurement.data.pending_approvals)} /><MetricLine label="Pending receipts" value={formatNumber(data.procurement.data.pending_receipts)} /><MetricLine label="Top suppliers" value={formatNumber(data.procurement.data.top_suppliers.length)} /></div></section>
           </>
         )}
       </div>
