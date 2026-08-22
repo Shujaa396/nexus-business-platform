@@ -45,7 +45,10 @@ class OrderItemResponse(BaseModel):
     id: UUID
     order_id: UUID
     product_id: UUID
+    product_name: str | None = None
+    product_sku: str | None = None
     quantity: Decimal
+    fulfilled_quantity: Decimal = Decimal(0)
     unit_price: Decimal
     discount: Decimal
     tax: Decimal
@@ -80,6 +83,7 @@ class OrderResponse(BaseModel):
     id: UUID
     organization_id: UUID
     branch_id: UUID
+    warehouse_id: UUID | None = None
     customer_id: UUID | None
     order_number: str
     status: str
@@ -88,6 +92,7 @@ class OrderResponse(BaseModel):
     discount: Decimal
     tax: Decimal
     total: Decimal
+    requested_fulfillment_date: datetime | None = None
     notes: str | None
     items: list[OrderItemResponse] = []
     payments: list[PaymentResponse] = []

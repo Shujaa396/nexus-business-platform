@@ -4,12 +4,12 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import get_current_membership
+from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
-from app.models import Order
+from app.models import Order, OrderItem
 from app.schemas.orders import (
     OrderCreate,
     OrderResponse,
@@ -17,6 +17,7 @@ from app.schemas.orders import (
     PaymentCreate,
     PaymentResponse,
 )
+from app.schemas.pagination import Page
 from app.services import orders as orders_service
 from app.services import payments as payments_service
 from app.services.audit import log_activity
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 @router.post("", response_model=OrderResponse)
 def create_order(
     payload: OrderCreate,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager", "staff"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -59,7 +60,7 @@ def create_order(
     return order
 
 
-@router.get("", response_model=list[OrderResponse])
+@router.get("", response_model=list[OrderResponse] | Page[OrderResponse])
 def list_orders(
     page: int = 1,
     page_size: int = 20,
@@ -70,7 +71,8 @@ def list_orders(
     date_from=None,
     date_to=None,
     order_number: str | None = None,
-    membership=Depends(get_current_membership),  # noqa: B008
+    paginated: bool = False,
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -86,20 +88,19 @@ def list_orders(
         date_from=date_from,
         date_to=date_to,
         order_number=order_number,
+        paginated=paginated,
     )
 
 
 @router.post("/{order_id}/confirm", response_model=OrderResponse)
 def confirm_order(
     order_id: UUID,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user
     try:
-        order = orders_service.confirm_order(db, order_id, user)
-        if order.organization_id != membership.organization_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        order = orders_service.confirm_order(db, membership.organization_id, order_id, user)
         log_activity(
             db,
             organization_id=order.organization_id,
@@ -123,14 +124,12 @@ def confirm_order(
 @router.post("/{order_id}/cancel", response_model=OrderResponse)
 def cancel_order(
     order_id: UUID,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user
     try:
-        order = orders_service.cancel_order(db, order_id, user)
-        if order.organization_id != membership.organization_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        order = orders_service.cancel_order(db, membership.organization_id, order_id, user)
         log_activity(
             db,
             organization_id=order.organization_id,
@@ -152,7 +151,7 @@ def cancel_order(
 def add_payment(
     order_id: UUID,
     payload: PaymentCreate,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user
@@ -190,7 +189,7 @@ def get_order_detail(
     membership=Depends(get_current_membership),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
-    order = db.get(Order, order_id)
+    order = db.query(Order).options(selectinload(Order.items).selectinload(OrderItem.product)).filter(Order.id == order_id, Order.organization_id == membership.organization_id).first()
     if order is None or order.organization_id != membership.organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return order
@@ -206,9 +205,7 @@ def patch_order(
     user = membership.user
     try:
         items = [it.model_dump() for it in payload.items] if payload.items is not None else None
-        order = orders_service.update_order(db, order_id, user, customer_id=payload.customer_id, items=items, notes=payload.notes)
-        if order.organization_id != membership.organization_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        order = orders_service.update_order(db, membership.organization_id, order_id, user, customer_id=payload.customer_id, items=items, notes=payload.notes)
         log_activity(
             db,
             organization_id=order.organization_id,
@@ -234,9 +231,7 @@ def complete_order(
 ) -> Any:
     user = membership.user
     try:
-        order = orders_service.complete_order(db, order_id, user)
-        if order.organization_id != membership.organization_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        order = orders_service.complete_order(db, membership.organization_id, order_id, user)
         log_activity(
             db,
             organization_id=order.organization_id,
@@ -265,11 +260,11 @@ def get_order_history(order_id: UUID, membership=Depends(get_current_membership)
     return sorted(history, key=lambda h: h.created_at)
 
 
-@router.get("/{order_id}/payments", response_model=list[PaymentResponse])
-def get_order_payments(order_id: UUID, membership=Depends(get_current_membership), db: Session = Depends(get_db)):
+@router.get("/{order_id}/payments", response_model=list[PaymentResponse] | Page[PaymentResponse])
+def get_order_payments(order_id: UUID, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100), paginated: bool = False, membership=Depends(get_current_membership), db: Session = Depends(get_db)):
     org_id = membership.organization_id
     try:
-        payments = payments_service.list_payments_for_order(db, org_id, order_id)
+        payments = payments_service.list_payments_for_order(db, org_id, order_id, page=page, page_size=page_size, paginated=paginated)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return payments

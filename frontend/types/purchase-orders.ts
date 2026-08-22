@@ -20,6 +20,7 @@ export type PurchaseOrder = {
   organization_id: string;
   supplier_id: string;
   branch_id: string;
+  warehouse_id: string | null;
   purchase_order_number: string;
   status: PurchaseOrderStatus;
   order_date: string;
@@ -44,6 +45,7 @@ export type PurchaseOrderItemCreate = {
 export type PurchaseOrderCreate = {
   supplier_id: string;
   branch_id: string;
+  warehouse_id?: string;
   order_date?: string;
   expected_delivery_date?: string;
   tax?: number;

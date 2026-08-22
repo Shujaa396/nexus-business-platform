@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_membership
+from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
 from app.models import Branch
 from app.schemas.branches import BranchCreate, BranchResponse, BranchUpdate
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/branches", tags=["branches"])
 
 
 @router.post("", response_model=BranchResponse)
-def create_branch(payload: BranchCreate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def create_branch(payload: BranchCreate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     existing = db.query(Branch).filter(Branch.organization_id == org_id, Branch.code == payload.code).first()
     if existing:
@@ -51,7 +51,7 @@ def get_branch(branch_id: UUID, membership=Depends(get_current_membership), db: 
 
 
 @router.patch("/{branch_id}", response_model=BranchResponse)
-def update_branch(branch_id: UUID, payload: BranchUpdate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def update_branch(branch_id: UUID, payload: BranchUpdate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     branch = db.get(Branch, branch_id)
     if branch is None or branch.organization_id != org_id:
@@ -69,7 +69,7 @@ def update_branch(branch_id: UUID, payload: BranchUpdate, membership=Depends(get
 
 
 @router.delete("/{branch_id}")
-def delete_branch(branch_id: UUID, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def delete_branch(branch_id: UUID, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     branch = db.get(Branch, branch_id)
     if branch is None or branch.organization_id != org_id:

@@ -1,20 +1,34 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
-from app.models import Branch, InventoryTransaction, Product, PurchaseOrder, PurchaseOrderItem, Supplier, User
+from app.models import (
+    Branch,
+    Product,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
+    PurchaseReceiptItem,
+    Supplier,
+    User,
+    Warehouse,
+)
 from app.schemas.purchase_orders import (
     PurchaseOrderCreate,
     PurchaseOrderUpdate,
     ReceivePurchaseOrder,
 )
 from app.services.inventory import stock_in
+from app.services.warehouse import _movement, get_or_create_inventory, get_warehouse
 
 
 class ProcurementError(Exception):
@@ -32,7 +46,7 @@ TRANSITIONS: dict[str, set[str]] = {
 
 
 def _get_order(db: Session, organization_id: UUID, purchase_order_id: UUID, *, lock: bool = False) -> PurchaseOrder:
-    stmt = select(PurchaseOrder).where(
+    stmt = select(PurchaseOrder).options(selectinload(PurchaseOrder.items)).where(
         PurchaseOrder.id == purchase_order_id,
         PurchaseOrder.organization_id == organization_id,
     )
@@ -88,11 +102,16 @@ def create_purchase_order(
     payload: PurchaseOrderCreate,
 ) -> PurchaseOrder:
     _validate_supplier_branch(db, organization_id, payload.supplier_id, payload.branch_id)
+    if payload.warehouse_id:
+        warehouse = db.get(Warehouse, payload.warehouse_id)
+        if warehouse is None or warehouse.organization_id != organization_id or warehouse.branch_id != payload.branch_id or not warehouse.is_active:
+            raise ProcurementError("Warehouse is not available for this branch")
     validated = _validated_items(db, organization_id, payload.items)
     order = PurchaseOrder(
         organization_id=organization_id,
         supplier_id=payload.supplier_id,
         branch_id=payload.branch_id,
+        warehouse_id=payload.warehouse_id,
         purchase_order_number="TEMP",
         status="DRAFT",
         order_date=payload.order_date or datetime.now(UTC),
@@ -135,9 +154,14 @@ def update_purchase_order(
     supplier_id = payload.supplier_id or order.supplier_id
     branch_id = payload.branch_id or order.branch_id
     _validate_supplier_branch(db, organization_id, supplier_id, branch_id)
+    warehouse_id = payload.warehouse_id if payload.warehouse_id is not None else order.warehouse_id
+    if warehouse_id:
+        warehouse = db.get(Warehouse, warehouse_id)
+        if warehouse is None or warehouse.organization_id != organization_id or warehouse.branch_id != branch_id or not warehouse.is_active:
+            raise ProcurementError("Warehouse is not available for this branch")
     if payload.expected_delivery_date and payload.order_date and payload.expected_delivery_date < payload.order_date:
         raise ProcurementError("expected_delivery_date must not be before order_date")
-    for field in ("supplier_id", "branch_id", "order_date", "expected_delivery_date", "tax", "discount", "notes"):
+    for field in ("supplier_id", "branch_id", "warehouse_id", "order_date", "expected_delivery_date", "tax", "discount", "notes"):
         value = getattr(payload, field)
         if value is not None:
             setattr(order, field, value)
@@ -187,16 +211,27 @@ def receive_purchase_order(
     payload: ReceivePurchaseOrder,
 ) -> PurchaseOrder:
     order = _get_order(db, organization_id, purchase_order_id, lock=True)
+    idempotency_key = payload.idempotency_key or payload.receipt_reference
+    fingerprint_payload = {
+        "purchase_order_id": str(order.id),
+        "receipt_reference": payload.receipt_reference,
+        "items": sorted(
+            [{"item_id": str(item.item_id), "quantity": str(item.quantity)} for item in payload.items],
+            key=lambda item: item["item_id"],
+        ),
+        "notes": payload.notes,
+    }
+    fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    receipt = db.query(PurchaseReceipt).filter(
+        PurchaseReceipt.organization_id == organization_id,
+        PurchaseReceipt.idempotency_key == idempotency_key,
+    ).with_for_update().first()
+    if receipt is not None:
+        if receipt.request_fingerprint != fingerprint:
+            raise ProcurementError("This idempotency key was already used with a different receipt")
+        return order
     if order.status not in {"APPROVED", "PARTIALLY_RECEIVED"}:
         raise ProcurementError("Only APPROVED or PARTIALLY_RECEIVED purchase orders can receive stock")
-    duplicate = db.query(InventoryTransaction).filter(
-        InventoryTransaction.organization_id == organization_id,
-        InventoryTransaction.reference_type == "PURCHASE_ORDER_RECEIPT",
-        InventoryTransaction.reference_id == order.id,
-        InventoryTransaction.notes == f"Receipt {payload.receipt_reference}",
-    ).first()
-    if duplicate is not None:
-        raise ProcurementError("This receipt reference has already been processed")
     item_map = {item.id: item for item in order.items}
     requested_by_item: dict[UUID, Decimal] = {}
     for received in payload.items:
@@ -208,22 +243,45 @@ def receive_purchase_order(
         remaining = item.quantity - item.received_quantity
         if requested_by_item[item.id] > remaining:
             raise ProcurementError("Received quantity cannot exceed the remaining ordered quantity")
+    try:
+        with db.begin_nested():
+            receipt = PurchaseReceipt(
+                organization_id=organization_id,
+                purchase_order_id=order.id,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+                notes=payload.notes,
+                created_by=user.id,
+            )
+            db.add(receipt)
+            db.flush()
+            for item_id, quantity in requested_by_item.items():
+                db.add(PurchaseReceiptItem(receipt_id=receipt.id, purchase_order_item_id=item_id, quantity=quantity))
+            db.flush()
+    except IntegrityError as exc:
+        receipt = db.query(PurchaseReceipt).filter(
+            PurchaseReceipt.organization_id == organization_id,
+            PurchaseReceipt.idempotency_key == idempotency_key,
+        ).first()
+        if receipt is None:
+            raise ProcurementError("Receipt could not be recorded; please retry") from exc
+        if receipt.request_fingerprint != fingerprint:
+            raise ProcurementError("This idempotency key was already used with a different receipt") from exc
+        return order
     for item_id, quantity in requested_by_item.items():
         item = item_map[item_id]
-        stock_in(
-            db,
-            organization_id=organization_id,
-            branch_id=order.branch_id,
-            product_id=item.product_id,
-            quantity=quantity,
-            user=user,
-            notes=f"Receipt {payload.receipt_reference}",
-            reference_type="PURCHASE_ORDER_RECEIPT",
-            reference_id=order.id,
-        )
+        if order.warehouse_id:
+            warehouse = get_warehouse(db, organization_id, order.warehouse_id, lock=True)
+            inventory = get_or_create_inventory(db, organization_id, warehouse.id, item.product_id, lock=True)
+            inventory.quantity += quantity
+            _movement(db, organization_id, warehouse, item.product_id, quantity, "PURCHASE_RECEIPT", user, order.id, payload.notes or f"Receipt {payload.receipt_reference}", "PURCHASE_ORDER_RECEIPT")
+        else:
+            stock_in(db, organization_id=organization_id, branch_id=order.branch_id, product_id=item.product_id, quantity=quantity, user=user, notes=payload.notes or f"Receipt {payload.receipt_reference}", reference_type="PURCHASE_ORDER_RECEIPT", reference_id=order.id)
         item.received_quantity += quantity
-    order.status = "RECEIVED" if all(item.received_quantity >= item.quantity for item in order.items) else "PARTIALLY_RECEIVED"
-    db.flush()
+    new_status = "RECEIVED" if all(item.received_quantity >= item.quantity for item in order.items) else "PARTIALLY_RECEIVED"
+    if new_status not in TRANSITIONS.get(order.status, set()):
+        raise ProcurementError(f"Cannot transition purchase order from {order.status} to {new_status}")
+    order.status = new_status
     return order
 
 
@@ -239,8 +297,9 @@ def list_purchase_orders(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     purchase_order_number: str | None = None,
-) -> list[PurchaseOrder]:
-    query = db.query(PurchaseOrder).filter(PurchaseOrder.organization_id == organization_id)
+    paginated: bool = False,
+) -> list[PurchaseOrder] | dict:
+    query = db.query(PurchaseOrder).options(selectinload(PurchaseOrder.items)).filter(PurchaseOrder.organization_id == organization_id)
     if supplier_id:
         query = query.filter(PurchaseOrder.supplier_id == supplier_id)
     if branch_id:
@@ -253,4 +312,9 @@ def list_purchase_orders(
         query = query.filter(PurchaseOrder.order_date <= date_to)
     if purchase_order_number:
         query = query.filter(PurchaseOrder.purchase_order_number.ilike(f"%{purchase_order_number}%"))
-    return query.order_by(PurchaseOrder.order_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    total = query.count()
+    items = query.order_by(PurchaseOrder.order_date.desc(), PurchaseOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if not paginated:
+        return items
+    total_pages = (total + page_size - 1) // page_size
+    return {"items": items, "page": page, "page_size": page_size, "total": total, "total_pages": total_pages, "has_next": page < total_pages, "has_previous": page > 1}

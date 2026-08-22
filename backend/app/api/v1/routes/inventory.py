@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_membership
+from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
 from app.models import InventoryItem, InventoryTransaction
 from app.schemas.inventory import (
@@ -15,13 +15,13 @@ from app.schemas.inventory import (
     InventoryTransactionResponse,
     StockOpRequest,
 )
+from app.services.audit import log_activity
 from app.services.inventory import (
     InsufficientStockError,
     adjust_stock,
     stock_in,
     stock_out,
 )
-from app.services.audit import log_activity
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 @router.post("/stock-in", response_model=InventoryTransactionResponse)
 def post_stock_in(
     payload: StockOpRequest,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user
@@ -65,7 +65,7 @@ def post_stock_in(
 @router.post("/stock-out", response_model=InventoryTransactionResponse)
 def post_stock_out(
     payload: StockOpRequest,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user
@@ -104,7 +104,7 @@ def post_stock_out(
 @router.post("/adjust", response_model=InventoryTransactionResponse)
 def post_adjust(
     payload: InventoryAdjust,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     user = membership.user

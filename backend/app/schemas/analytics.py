@@ -17,6 +17,11 @@ AnalyticsIntent = Literal[
     "invoice_summary",
     "supplier_summary",
     "procurement_summary",
+    "warehouse_summary",
+    "sales_order_summary",
+    "fulfillment_summary",
+    "customer_sales",
+    "outstanding_customer_balance",
 ]
 PeriodType = Literal["daily", "weekly", "monthly"]
 

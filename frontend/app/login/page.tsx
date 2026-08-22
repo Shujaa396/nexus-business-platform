@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { AlertCircle, Building2, Loader2, Lock, Mail } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { login } from "../../lib/auth";
+import { getMe, login } from "../../lib/auth";
 import { useAuth } from "../../hooks/use-auth";
 
 export default function LoginPage() {
@@ -29,13 +29,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login({
+      const auth = await login({
         email,
         password,
       });
 
       updateSession();
-      router.push("/dashboard");
+      const me = await getMe(auth.access_token);
+      router.push(me.role_name === "customer" ? "/customer-portal" : "/dashboard");
     } catch (err) {
       setError(
         err instanceof Error

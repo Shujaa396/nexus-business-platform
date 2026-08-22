@@ -8,7 +8,12 @@ export type AnalyticsIntent =
   | "payment_summary"
   | "invoice_summary"
   | "supplier_summary"
-  | "procurement_summary";
+  | "procurement_summary"
+  | "warehouse_summary"
+  | "sales_order_summary"
+  | "fulfillment_summary"
+  | "customer_sales"
+  | "outstanding_customer_balance";
 
 export type AnalyticsPeriod = "daily" | "weekly" | "monthly";
 
@@ -118,6 +123,11 @@ export type ProcurementSummary = {
   top_suppliers: Array<{ supplier_id: string; supplier_name: string; purchase_order_count: number; purchasing_total: string | number }>;
 };
 
+export type WarehouseSummary = {
+  total_inventory_value: string | number;
+  warehouses: Array<{ warehouse_id: string; name: string; code: string; inventory_value: string | number; product_count: number; low_stock_count: number }>;
+};
+
 export type AnalyticsDashboardData = {
   summary: AnalyticsResponse<SalesSummary>;
   trend: AnalyticsResponse<SalesTrend>;
@@ -129,6 +139,7 @@ export type AnalyticsDashboardData = {
   invoices: AnalyticsResponse<InvoiceSummary>;
   suppliers: AnalyticsResponse<SupplierSummary>;
   procurement: AnalyticsResponse<ProcurementSummary>;
+  warehouses: AnalyticsResponse<WarehouseSummary>;
 };
 
 export type NaturalLanguageResponse = {

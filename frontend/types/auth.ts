@@ -4,6 +4,7 @@ export type User = {
     full_name: string;
     is_active: boolean;
     is_superadmin: boolean;
+    role_name?: string | null;
 };
 
 export type Organization = {
@@ -24,6 +25,7 @@ export type AuthResponse = {
 export type MeResponse = User & {
     organization_id: string | null;
     organization_name: string | null;
+    role_name: string | null;
 };
 
 export type LoginRequest = {

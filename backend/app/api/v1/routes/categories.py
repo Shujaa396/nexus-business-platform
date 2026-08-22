@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_membership
+from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
 from app.models import Category
 from app.schemas.categories import CategoryCreate, CategoryResponse, CategoryUpdate
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/categories", tags=["categories"])
 
 
 @router.post("", response_model=CategoryResponse)
-def create_category(payload: CategoryCreate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def create_category(payload: CategoryCreate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     if payload.parent_id:
         parent = db.get(Category, payload.parent_id)
@@ -55,7 +55,7 @@ def get_category(category_id: UUID, membership=Depends(get_current_membership), 
 
 
 @router.patch("/{category_id}", response_model=CategoryResponse)
-def update_category(category_id: UUID, payload: CategoryUpdate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def update_category(category_id: UUID, payload: CategoryUpdate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     category = db.get(Category, category_id)
     if category is None or category.organization_id != org_id:
@@ -73,7 +73,7 @@ def update_category(category_id: UUID, payload: CategoryUpdate, membership=Depen
 
 
 @router.delete("/{category_id}")
-def delete_category(category_id: UUID, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def delete_category(category_id: UUID, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     category = db.get(Category, category_id)
     if category is None or category.organization_id != org_id:

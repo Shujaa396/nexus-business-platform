@@ -73,6 +73,11 @@ const navigation = [
         icon: Boxes,
       },
       {
+        label: "Warehouses",
+        href: "/warehouses",
+        icon: Boxes,
+      },
+      {
         label: "Categories",
         href: "/categories",
         icon: ClipboardList,

@@ -43,7 +43,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const localOrg = getStoredOrganization();
       setUser(localUser);
       setOrganization(localOrg);
-      setIsLoading(false);
 
       // Background verification via /auth/me
       try {
@@ -55,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             full_name: me.full_name,
             is_active: me.is_active,
             is_superadmin: me.is_superadmin,
+            role_name: me.role_name,
           };
           setUser(updatedUser);
           localStorage.setItem("nexus_user", JSON.stringify(updatedUser));
@@ -71,7 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch {
-        // Handled by apiRequest token refresh or keeps local session if offline
+        clearAuthSession();
+        setUser(null);
+        setOrganization(null);
+      } finally {
+        setIsLoading(false);
       }
     } else {
       setUser(null);

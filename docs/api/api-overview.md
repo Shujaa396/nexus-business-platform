@@ -128,4 +128,36 @@ Analytics accepts structured filters only: `date_from`, `date_to`, `branch_id`, 
 | POST | `/api/v1/purchase-orders/{purchase_order_id}/receive` | Atomically receive stock into the order branch inventory |
 | GET | `/api/v1/purchase-orders/{purchase_order_id}/items` | List purchase order items |
 
-Purchase order writes and receiving require `admin` or `manager`. Staff can list and view purchase orders. Receiving is limited to remaining quantities and requires a receipt reference to prevent duplicate processing.
+Purchase order writes and receiving require `admin` or `manager`. Staff can list and view purchase orders. Receiving is limited to remaining quantities. `idempotency_key` is optional for new callers and falls back to the legacy `receipt_reference`; identical retries replay the original receipt and a conflicting payload returns `400`.
+
+## Phase 11 Warehouse and Advanced Inventory Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST/GET | `/api/v1/warehouses` | Create or list branch-linked warehouses |
+| GET/PATCH/DELETE | `/api/v1/warehouses/{warehouse_id}` | View, update, or deactivate a warehouse |
+| GET | `/api/v1/inventory/by-warehouse` | List warehouse/product stock with available quantities |
+| GET | `/api/v1/inventory/alerts` | List low-stock and out-of-stock warehouse alerts |
+| GET | `/api/v1/inventory/valuation` | Return total and per-warehouse physical stock valuation |
+| POST | `/api/v1/inventory/adjustments` | Apply an audited warehouse stock adjustment |
+| GET | `/api/v1/inventory/movements` | Query immutable warehouse movement history |
+| POST/GET | `/api/v1/inventory/transfers` | Create or list warehouse transfers |
+| GET | `/api/v1/inventory/transfers/{transfer_id}` | Retrieve a transfer |
+| POST | `/api/v1/inventory/transfers/{transfer_id}/approve` | Approve a requested transfer |
+| POST | `/api/v1/inventory/transfers/{transfer_id}/dispatch` | Deduct source available stock and dispatch |
+| POST | `/api/v1/inventory/transfers/{transfer_id}/receive` | Credit destination stock and complete |
+| POST | `/api/v1/inventory/transfers/{transfer_id}/cancel` | Cancel an eligible transfer |
+| POST | `/api/v1/inventory/reservations` | Reserve available warehouse stock |
+| POST | `/api/v1/inventory/reservations/{reservation_id}/release` | Release an active reservation |
+| GET | `/api/v1/analytics/warehouses` | Controlled warehouse valuation and alert analytics |
+
+Warehouse mutations require `admin` or `manager`; authenticated staff retain read access. All warehouse IDs and inventory queries are scoped to the authenticated organization.
+
+## Phase 14 Hardening
+
+- Customer-role accounts can use only the customer portal endpoints and cannot access internal membership APIs.
+- Customer, order, invoice, payment, warehouse, inventory, transfer, and procurement reads are tenant-scoped server-side.
+- Inventory, invoice, payment, transfer, procurement, and catalog mutations require explicit management roles.
+- Payment refunds require `admin` or `manager` and are checked against the authenticated organization.
+- Customer history endpoints preserve legacy array responses and accept `paginated=true` for responses containing `items`, `page`, `page_size`, `total`, `total_pages`, `has_next`, and `has_previous`.
+- The remaining historical collection endpoints retain array responses for backward compatibility; their existing `page` and `page_size` controls are validated and tenant-scoped. Customer history, contacts, and addresses expose the canonical envelope when `paginated=true`.

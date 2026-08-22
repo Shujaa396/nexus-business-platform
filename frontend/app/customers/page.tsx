@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -30,7 +31,7 @@ import {
 import {
   createCustomer,
   deleteCustomer,
-  listCustomers,
+  listCustomersPage,
   updateCustomer,
 } from "../../lib/customers";
 import { exportToCSV } from "../../lib/export";
@@ -39,6 +40,8 @@ import type { Customer, CustomerCreate, CustomerUpdate } from "../../types/custo
 export default function CustomersPage() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -48,23 +51,31 @@ export default function CustomersPage() {
 
   // Form states
   const [formName, setFormName] = useState("");
+  const [formCode, setFormCode] = useState("");
+  const [formCompany, setFormCompany] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formStatus, setFormStatus] = useState("ACTIVE");
+  const [formCreditLimit, setFormCreditLimit] = useState("0");
+  const [formDiscount, setFormDiscount] = useState("0");
+  const [formBilling, setFormBilling] = useState("");
+  const [formShipping, setFormShipping] = useState("");
   const [formError, setFormError] = useState("");
 
   // Queries
   const {
-    data: customers,
+    data: customerPage,
     isLoading,
     isError,
     error,
     refetch,
   } = useQuery({
-    queryKey: ["customers", searchQuery],
-    queryFn: () => listCustomers({ q: searchQuery || undefined }),
+    queryKey: ["customers", searchQuery, statusFilter, page],
+    queryFn: () => listCustomersPage({ q: searchQuery || undefined, status: statusFilter || undefined, page }),
   });
+  const customers = customerPage?.items;
 
   // Mutations
   const createMutation = useMutation({
@@ -108,10 +119,17 @@ export default function CustomersPage() {
 
   const resetForm = () => {
     setFormName("");
+    setFormCode("");
+    setFormCompany("");
     setFormEmail("");
     setFormPhone("");
     setFormAddress("");
     setFormNotes("");
+    setFormStatus("ACTIVE");
+    setFormCreditLimit("0");
+    setFormDiscount("0");
+    setFormBilling("");
+    setFormShipping("");
     setFormError("");
   };
 
@@ -124,10 +142,17 @@ export default function CustomersPage() {
     resetForm();
     setEditingCustomer(c);
     setFormName(c.name);
+    setFormCode(c.customer_code || "");
+    setFormCompany(c.company_name || "");
     setFormEmail(c.email || "");
     setFormPhone(c.phone || "");
     setFormAddress(c.address || "");
     setFormNotes(c.notes || "");
+    setFormStatus(c.status);
+    setFormCreditLimit(c.credit_limit);
+    setFormDiscount(c.discount_percent);
+    setFormBilling(c.billing_address || "");
+    setFormShipping(c.shipping_address || "");
   };
 
   const handleSubmitCreate = (e: React.FormEvent) => {
@@ -135,10 +160,17 @@ export default function CustomersPage() {
     setFormError("");
     createMutation.mutate({
       name: formName.trim(),
+      customer_code: formCode.trim() || undefined,
+      company_name: formCompany.trim() || undefined,
       email: formEmail.trim() || undefined,
       phone: formPhone.trim() || undefined,
       address: formAddress.trim() || undefined,
       notes: formNotes.trim() || undefined,
+      status: formStatus,
+      credit_limit: formCreditLimit,
+      discount_percent: formDiscount,
+      billing_address: formBilling.trim() || undefined,
+      shipping_address: formShipping.trim() || undefined,
     });
   };
 
@@ -150,10 +182,17 @@ export default function CustomersPage() {
       id: editingCustomer.id,
       data: {
         name: formName.trim(),
+        customer_code: formCode.trim() || undefined,
+        company_name: formCompany.trim() || undefined,
         email: formEmail.trim() || undefined,
         phone: formPhone.trim() || undefined,
         address: formAddress.trim() || undefined,
         notes: formNotes.trim() || undefined,
+        status: formStatus,
+        credit_limit: formCreditLimit,
+        discount_percent: formDiscount,
+        billing_address: formBilling.trim() || undefined,
+        shipping_address: formShipping.trim() || undefined,
       },
     });
   };
@@ -270,11 +309,14 @@ export default function CustomersPage() {
             <input
               type="search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
               placeholder="Search by customer name, phone, or email..."
               className="w-full rounded-lg border border-border bg-slate-50 py-2 pl-9 pr-3 text-xs outline-none focus:border-primary focus:bg-white transition"
             />
           </div>
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="rounded-lg border border-border bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <option value="">All statuses</option><option value="ACTIVE">Active</option><option value="PROSPECT">Prospect</option><option value="INACTIVE">Inactive</option><option value="BLOCKED">Blocked</option>
+          </select>
         </div>
 
         {/* Customers Table Card */}
@@ -353,7 +395,7 @@ export default function CustomersPage() {
                               {customer.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-900">{customer.name}</p>
+                              <Link href={`/customers/${customer.id}`} className="font-semibold text-slate-900 hover:text-primary">{customer.name}</Link>
                               {customer.notes && (
                                 <p className="text-[10px] text-slate-400 truncate max-w-xs">
                                   {customer.notes}
@@ -427,6 +469,7 @@ export default function CustomersPage() {
             </div>
           )}
         </div>
+        {customerPage && customerPage.total_pages > 0 && <div className="flex items-center justify-between text-xs text-slate-500"><span>Showing page {customerPage.page} of {customerPage.total_pages} ({customerPage.total} total)</span><div className="flex gap-2"><button type="button" disabled={!customerPage.has_previous} onClick={() => setPage((current) => current - 1)} className="rounded border border-border px-3 py-1.5 disabled:opacity-40">Previous</button><button type="button" disabled={!customerPage.has_next} onClick={() => setPage((current) => current + 1)} className="rounded border border-border px-3 py-1.5 disabled:opacity-40">Next</button></div></div>}
       </div>
 
       {/* Floating Bulk Action Bar */}
@@ -478,6 +521,14 @@ export default function CustomersPage() {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="Customer code (optional)" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <input value={formCompany} onChange={(e) => setFormCompany(e.target.value)} placeholder="Company name" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <select value={formStatus} onChange={(e) => setFormStatus(e.target.value)} className="rounded-lg border border-border px-3 py-2 text-xs"><option value="ACTIVE">Active</option><option value="PROSPECT">Prospect</option><option value="INACTIVE">Inactive</option><option value="BLOCKED">Blocked</option></select>
+            <input type="number" min="0" value={formCreditLimit} onChange={(e) => setFormCreditLimit(e.target.value)} placeholder="Credit limit" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <input type="number" min="0" max="100" step="0.01" value={formDiscount} onChange={(e) => setFormDiscount(e.target.value)} placeholder="Discount %" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+          </div>
+
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-800">
               Email Address
@@ -516,6 +567,7 @@ export default function CustomersPage() {
               className="w-full rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary transition"
             />
           </div>
+          <textarea rows={2} value={formShipping} onChange={(e) => setFormShipping(e.target.value)} placeholder="Shipping address" className="w-full rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary transition" />
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-800">
@@ -580,6 +632,14 @@ export default function CustomersPage() {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="Customer code" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <input value={formCompany} onChange={(e) => setFormCompany(e.target.value)} placeholder="Company name" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <select value={formStatus} onChange={(e) => setFormStatus(e.target.value)} className="rounded-lg border border-border px-3 py-2 text-xs"><option value="ACTIVE">Active</option><option value="PROSPECT">Prospect</option><option value="INACTIVE">Inactive</option><option value="BLOCKED">Blocked</option></select>
+            <input type="number" min="0" value={formCreditLimit} onChange={(e) => setFormCreditLimit(e.target.value)} placeholder="Credit limit" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+            <input type="number" min="0" max="100" step="0.01" value={formDiscount} onChange={(e) => setFormDiscount(e.target.value)} placeholder="Discount %" className="rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary" />
+          </div>
+
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-800">
               Email Address
@@ -615,6 +675,7 @@ export default function CustomersPage() {
               className="w-full rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary transition"
             />
           </div>
+          <textarea rows={2} value={formShipping} onChange={(e) => setFormShipping(e.target.value)} placeholder="Shipping address" className="w-full rounded-lg border border-border px-3 py-2 text-xs outline-none focus:border-primary transition" />
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-800">

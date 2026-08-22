@@ -4,10 +4,11 @@ from collections.abc import Iterable
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
+    Customer,
     Order,
     OrderItem,
     OrderStatusHistory,
@@ -22,6 +23,20 @@ class OrderValidationError(Exception):
     pass
 
 
+ORDER_TRANSITIONS: dict[str, set[str]] = {
+    "DRAFT": {"CONFIRMED"},
+    "CONFIRMED": {"COMPLETED", "CANCELLED"},
+    "COMPLETED": set(),
+    "CANCELLED": set(),
+}
+
+
+def _transition_order(order: Order, target_status: str) -> None:
+    if target_status not in ORDER_TRANSITIONS.get(order.status, set()):
+        raise OrderValidationError(f"Cannot transition order from {order.status} to {target_status}")
+    order.status = target_status
+
+
 def create_order(
     db: Session,
     organization_id: UUID,
@@ -32,6 +47,10 @@ def create_order(
     customer_id: UUID | None = None,
 ) -> Order:
     # items: list of {product_id, quantity, unit_price, discount?, tax?}
+    if customer_id is not None:
+        customer = db.query(Customer).filter(Customer.id == customer_id, Customer.organization_id == organization_id, Customer.is_active.is_(True)).first()
+        if customer is None:
+            raise OrderValidationError("Customer not found or inactive")
     order = Order(
         organization_id=organization_id,
         branch_id=branch_id,
@@ -92,8 +111,8 @@ def create_order(
     return order
 
 
-def confirm_order(db: Session, order_id: UUID, user: User) -> Order:
-    order = db.get(Order, order_id)
+def confirm_order(db: Session, organization_id: UUID, order_id: UUID, user: User) -> Order:
+    order = db.query(Order).filter(Order.id == order_id, Order.organization_id == organization_id).with_for_update().first()
     if order is None:
         raise OrderValidationError("Order not found")
     if order.status != "DRAFT":
@@ -115,7 +134,7 @@ def confirm_order(db: Session, order_id: UUID, user: User) -> Order:
         raise
 
     old_status = order.status
-    order.status = "CONFIRMED"
+    _transition_order(order, "CONFIRMED")
     hist = OrderStatusHistory(
         organization_id=order.organization_id,
         order_id=order.id,
@@ -129,8 +148,8 @@ def confirm_order(db: Session, order_id: UUID, user: User) -> Order:
     return order
 
 
-def cancel_order(db: Session, order_id: UUID, user: User) -> Order:
-    order = db.get(Order, order_id)
+def cancel_order(db: Session, organization_id: UUID, order_id: UUID, user: User) -> Order:
+    order = db.query(Order).filter(Order.id == order_id, Order.organization_id == organization_id).with_for_update().first()
     if order is None:
         raise OrderValidationError("Order not found")
     if order.status != "CONFIRMED":
@@ -149,7 +168,7 @@ def cancel_order(db: Session, order_id: UUID, user: User) -> Order:
         )
 
     old_status = order.status
-    order.status = "CANCELLED"
+    _transition_order(order, "CANCELLED")
     hist = OrderStatusHistory(
         organization_id=order.organization_id,
         order_id=order.id,
@@ -189,8 +208,8 @@ def add_payment(db: Session, organization_id: UUID, order_id: UUID, amount: Deci
     return payment
 
 
-def list_orders(db: Session, organization_id: UUID, *, page: int = 1, page_size: int = 20, status: str | None = None, payment_status: str | None = None, customer_id: UUID | None = None, branch_id: UUID | None = None, date_from=None, date_to=None, order_number: str | None = None):
-    stmt = select(Order).where(Order.organization_id == organization_id)
+def list_orders(db: Session, organization_id: UUID, *, page: int = 1, page_size: int = 20, status: str | None = None, payment_status: str | None = None, customer_id: UUID | None = None, branch_id: UUID | None = None, date_from=None, date_to=None, order_number: str | None = None, paginated: bool = False):
+    stmt = select(Order).options(selectinload(Order.items).selectinload(OrderItem.product)).where(Order.organization_id == organization_id)
     if status:
         stmt = stmt.filter(Order.status == status)
     if payment_status:
@@ -205,18 +224,25 @@ def list_orders(db: Session, organization_id: UUID, *, page: int = 1, page_size:
         stmt = stmt.filter(Order.created_at >= date_from)
     if date_to:
         stmt = stmt.filter(Order.created_at <= date_to)
-    stmt = stmt.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    return db.execute(stmt).scalars().all()
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    items = db.execute(stmt.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    if not paginated:
+        return items
+    total_pages = (total + page_size - 1) // page_size
+    return {"items": items, "page": page, "page_size": page_size, "total": total, "total_pages": total_pages, "has_next": page < total_pages, "has_previous": page > 1}
 
 
-def update_order(db: Session, order_id: UUID, user: User, *, customer_id: UUID | None = None, items: Iterable[dict] | None = None, notes: str | None = None) -> Order:
-    order = db.get(Order, order_id)
+def update_order(db: Session, organization_id: UUID, order_id: UUID, user: User, *, customer_id: UUID | None = None, items: Iterable[dict] | None = None, notes: str | None = None) -> Order:
+    order = db.query(Order).filter(Order.id == order_id, Order.organization_id == organization_id).with_for_update().first()
     if order is None:
         raise OrderValidationError("Order not found")
     if order.status != "DRAFT":
         raise OrderValidationError("Only DRAFT orders can be modified")
 
     if customer_id is not None:
+        customer = db.query(Customer).filter(Customer.id == customer_id, Customer.organization_id == organization_id, Customer.is_active.is_(True)).first()
+        if customer is None:
+            raise OrderValidationError("Customer not found or inactive")
         order.customer_id = customer_id
     if notes is not None:
         order.notes = notes
@@ -277,14 +303,12 @@ def get_order_history(db: Session, organization_id: UUID, order_id: UUID):
     return order.history
 
 
-def complete_order(db: Session, order_id: UUID, user: User) -> Order:
-    order = db.get(Order, order_id)
+def complete_order(db: Session, organization_id: UUID, order_id: UUID, user: User) -> Order:
+    order = db.query(Order).filter(Order.id == order_id, Order.organization_id == organization_id).with_for_update().first()
     if order is None:
         raise OrderValidationError("Order not found")
-    if order.status != "CONFIRMED":
-        raise OrderValidationError("Only CONFIRMED orders can be completed")
     old_status = order.status
-    order.status = "COMPLETED"
+    _transition_order(order, "COMPLETED")
     hist = OrderStatusHistory(
         organization_id=order.organization_id,
         order_id=order.id,

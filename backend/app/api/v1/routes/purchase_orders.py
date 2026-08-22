@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
 from app.models import PurchaseOrder
+from app.schemas.pagination import Page
 from app.schemas.purchase_orders import (
     PurchaseOrderCreate,
+    PurchaseOrderItemResponse,
     PurchaseOrderResponse,
     PurchaseOrderUpdate,
-    PurchaseOrderItemResponse,
     ReceivePurchaseOrder,
     StatusTransitionResponse,
 )
@@ -59,7 +60,7 @@ def create_purchase_order(
         raise _error(exc) from exc
 
 
-@router.get("", response_model=list[PurchaseOrderResponse])
+@router.get("", response_model=list[PurchaseOrderResponse] | Page[PurchaseOrderResponse])
 def list_purchase_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -69,6 +70,7 @@ def list_purchase_orders(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     purchase_order_number: str | None = Query(None),
+    paginated: bool = False,
     membership=Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> Any:
@@ -87,6 +89,7 @@ def list_purchase_orders(
         date_from=date_from,
         date_to=date_to,
         purchase_order_number=purchase_order_number,
+        paginated=paginated,
     )
 
 

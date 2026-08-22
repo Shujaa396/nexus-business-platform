@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Branch,
@@ -33,6 +33,21 @@ class InvoiceValidationError(InvoiceError):
 
 class InvoiceStateError(InvoiceError):
     pass
+
+
+INVOICE_TRANSITIONS: dict[str, set[str]] = {
+    "DRAFT": {"ISSUED", "VOID"},
+    "ISSUED": {"PARTIAL", "PAID", "VOID"},
+    "PARTIAL": {"PAID", "VOID"},
+    "PAID": set(),
+    "VOID": set(),
+}
+
+
+def _transition_invoice(invoice: Invoice, target_status: str) -> None:
+    if target_status not in INVOICE_TRANSITIONS.get(invoice.status, set()):
+        raise InvoiceStateError(f"Cannot transition invoice from {invoice.status} to {target_status}")
+    invoice.status = target_status
 
 
 def generate_invoice_number(db: Session, organization_id: UUID) -> str:
@@ -91,7 +106,7 @@ def generate_invoice_from_order(
     if order is None or order.organization_id != organization_id:
         raise InvoiceValidationError("Order not found or tenant mismatch")
 
-    if order.status not in ("CONFIRMED", "COMPLETED"):
+    if order.status not in ("CONFIRMED", "COMPLETED", "FULFILLED"):
         raise InvoiceValidationError("Invoice can only be generated for CONFIRMED or COMPLETED orders")
 
     existing_invoice = (
@@ -193,14 +208,17 @@ def issue_invoice(
     notes: str | None = None,
 ) -> Invoice:
     """Issue a DRAFT invoice to ISSUED (or PARTIAL/PAID if payments exist)."""
-    invoice = db.get(Invoice, invoice_id)
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.organization_id == organization_id,
+    ).with_for_update().first()
     if invoice is None or invoice.organization_id != organization_id:
         raise InvoiceNotFoundError("Invoice not found")
 
     if invoice.status != "DRAFT":
         raise InvoiceStateError(f"Cannot issue invoice with status {invoice.status}")
 
-    invoice.status = "ISSUED"
+    _transition_invoice(invoice, "ISSUED")
     invoice.issued_date = datetime.now(UTC)
     invoice.issued_by = user.id
     if due_date:
@@ -224,7 +242,10 @@ def record_invoice_payment(
     user: User,
 ) -> Payment:
     """Record a payment on an invoice, delegating to the existing order Payment model."""
-    invoice = db.get(Invoice, invoice_id)
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.organization_id == organization_id,
+    ).with_for_update().first()
     if invoice is None or invoice.organization_id != organization_id:
         raise InvoiceNotFoundError("Invoice not found")
 
@@ -258,14 +279,14 @@ def void_invoice(
     notes: str | None = None,
 ) -> Invoice:
     """Void an invoice. Cannot void if already PAID or VOID."""
-    invoice = db.get(Invoice, invoice_id)
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.organization_id == organization_id,
+    ).with_for_update().first()
     if invoice is None or invoice.organization_id != organization_id:
         raise InvoiceNotFoundError("Invoice not found")
 
-    if invoice.status in ("PAID", "VOID"):
-        raise InvoiceStateError(f"Cannot void invoice in {invoice.status} status")
-
-    invoice.status = "VOID"
+    _transition_invoice(invoice, "VOID")
     if notes:
         invoice.notes = f"{invoice.notes or ''}\nVoided: {notes}".strip()
 
@@ -275,7 +296,7 @@ def void_invoice(
 
 def get_invoice(db: Session, organization_id: UUID, invoice_id: UUID) -> Invoice:
     """Get a single invoice by ID, scoped to organization."""
-    invoice = db.get(Invoice, invoice_id)
+    invoice = db.query(Invoice).options(selectinload(Invoice.line_items)).filter(Invoice.id == invoice_id, Invoice.organization_id == organization_id).first()
     if invoice is None or invoice.organization_id != organization_id:
         raise InvoiceNotFoundError("Invoice not found")
     return invoice
@@ -292,9 +313,10 @@ def list_invoices(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     invoice_number: str | None = None,
-) -> list[Invoice]:
+    paginated: bool = False,
+) -> list[Invoice] | dict:
     """List invoices scoped to organization with optional filtering and pagination."""
-    query = select(Invoice).where(Invoice.organization_id == organization_id)
+    query = select(Invoice).options(selectinload(Invoice.line_items)).where(Invoice.organization_id == organization_id)
 
     if status:
         query = query.where(Invoice.status == status)
@@ -309,8 +331,9 @@ def list_invoices(
     if date_to:
         query = query.where(Invoice.created_at <= date_to)
 
-    query = query.order_by(Invoice.created_at.desc())
-    offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
-
-    return list(db.scalars(query).all())
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    items = list(db.scalars(query.order_by(Invoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size)).all())
+    if not paginated:
+        return items
+    total_pages = (total + page_size - 1) // page_size
+    return {"items": items, "page": page, "page_size": page_size, "total": total, "total_pages": total_pages, "has_next": page < total_pages, "has_previous": page > 1}

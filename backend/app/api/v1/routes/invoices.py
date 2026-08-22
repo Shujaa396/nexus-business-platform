@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_membership
+from app.core.security import require_role
 from app.db.session import get_db
 from app.schemas.invoices import (
     InvoiceCreate,
@@ -16,6 +16,7 @@ from app.schemas.invoices import (
     InvoiceVoid,
 )
 from app.schemas.orders import PaymentResponse
+from app.schemas.pagination import Page
 from app.services import invoices as invoices_service
 from app.services import payments as payments_service
 from app.services.audit import log_activity
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 def create_invoice(
     payload: InvoiceCreate,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -57,17 +58,18 @@ def create_invoice(
     return invoice
 
 
-@router.get("", response_model=list[InvoiceResponse])
+@router.get("", response_model=list[InvoiceResponse] | Page[InvoiceResponse])
 def list_invoices(
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     status: str | None = None,
     customer_id: UUID | None = None,
     branch_id: UUID | None = None,
     invoice_number: str | None = None,
     date_from=None,
     date_to=None,
-    membership=Depends(get_current_membership),  # noqa: B008
+    paginated: bool = False,
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -82,13 +84,14 @@ def list_invoices(
         invoice_number=invoice_number,
         date_from=date_from,
         date_to=date_to,
+        paginated=paginated,
     )
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
 def get_invoice(
     invoice_id: UUID,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -103,7 +106,7 @@ def get_invoice(
 def issue_invoice(
     invoice_id: UUID,
     payload: InvoiceIssue | None = None,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -143,7 +146,7 @@ def issue_invoice(
 def record_invoice_payment(
     invoice_id: UUID,
     payload: InvoicePayment,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id
@@ -182,7 +185,7 @@ def record_invoice_payment(
 def void_invoice(
     invoice_id: UUID,
     payload: InvoiceVoid | None = None,
-    membership=Depends(get_current_membership),  # noqa: B008
+    membership=Depends(require_role(["admin", "manager"])),  # noqa: B008
     db: Session = Depends(get_db),
 ) -> Any:
     org_id = membership.organization_id

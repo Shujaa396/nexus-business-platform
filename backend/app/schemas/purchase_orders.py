@@ -25,6 +25,7 @@ class PurchaseOrderItemCreate(BaseModel):
 class PurchaseOrderCreate(BaseModel):
     supplier_id: UUID
     branch_id: UUID
+    warehouse_id: UUID | None = None
     order_date: datetime | None = None
     expected_delivery_date: datetime | None = None
     tax: Decimal = Field(default=Decimal(0), ge=0)
@@ -42,6 +43,7 @@ class PurchaseOrderCreate(BaseModel):
 class PurchaseOrderUpdate(BaseModel):
     supplier_id: UUID | None = None
     branch_id: UUID | None = None
+    warehouse_id: UUID | None = None
     order_date: datetime | None = None
     expected_delivery_date: datetime | None = None
     tax: Decimal | None = Field(default=None, ge=0)
@@ -66,6 +68,7 @@ class PurchaseOrderResponse(BaseModel):
     organization_id: UUID
     supplier_id: UUID
     branch_id: UUID
+    warehouse_id: UUID | None
     purchase_order_number: str
     status: str
     order_date: datetime
@@ -91,6 +94,7 @@ class ReceiveItem(BaseModel):
 class ReceivePurchaseOrder(BaseModel):
     items: list[ReceiveItem] = Field(min_length=1, max_length=100)
     receipt_reference: str = Field(min_length=1, max_length=120)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = None
 
 

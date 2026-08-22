@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     String,
@@ -38,6 +39,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     customers: Mapped[list[Customer]] = relationship("Customer", back_populates="organization")
     suppliers: Mapped[list[Supplier]] = relationship("Supplier", back_populates="organization")
     purchase_orders: Mapped[list[PurchaseOrder]] = relationship("PurchaseOrder", back_populates="organization")
+    warehouses: Mapped[list[Warehouse]] = relationship("Warehouse", back_populates="organization")
     invoices: Mapped[list[Invoice]] = relationship("Invoice", back_populates="organization")
     memberships: Mapped[list[OrganizationMembership]] = relationship(
         "OrganizationMembership",
@@ -58,6 +60,24 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         "OrganizationMembership",
         back_populates="user",
     )
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class RefreshToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_refresh_tokens_token_hash"),
+        Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_expires_at", "expires_at"),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_hash: Mapped[str] = mapped_column(String(128), nullable=True)
+
+    user: Mapped[User] = relationship("User", back_populates="refresh_tokens")
 
 
 class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -209,9 +229,12 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "customers"
     __table_args__ = (
+        UniqueConstraint("organization_id", "customer_code", name="uq_customers_organization_code"),
+        UniqueConstraint("organization_id", "id", name="uq_customers_organization_id_id"),
         Index("ix_customers_organization_id", "organization_id"),
         Index("ix_customers_email", "email"),
         Index("ix_customers_phone", "phone"),
+        Index("ix_customers_status", "status"),
     )
 
     organization_id: Mapped[UUID] = mapped_column(
@@ -219,14 +242,81 @@ class Customer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    customer_code: Mapped[str] = mapped_column(String(80), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=True)
     phone: Mapped[str] = mapped_column(String(50), nullable=True)
     address: Mapped[str] = mapped_column(Text, nullable=True)
+    billing_address: Mapped[str] = mapped_column(Text, nullable=True)
+    shipping_address: Mapped[str] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
 
     organization: Mapped[Organization] = relationship("Organization", back_populates="customers")
+    user: Mapped[User] = relationship("User")
+    contacts: Mapped[list[CustomerContact]] = relationship("CustomerContact", back_populates="customer", cascade="all, delete-orphan", foreign_keys="CustomerContact.customer_id")
+    addresses: Mapped[list[CustomerAddress]] = relationship("CustomerAddress", back_populates="customer", cascade="all, delete-orphan", foreign_keys="CustomerAddress.customer_id")
+
+
+class CustomerContact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "customer_contacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "customer_id"],
+            ["customers.organization_id", "customers.id"],
+            name="fk_customer_contacts_org_customer",
+            ondelete="CASCADE",
+        ),
+        Index("ix_customer_contacts_organization_id", "organization_id"),
+        Index("ix_customer_contacts_customer_id", "customer_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    customer_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    job_title: Mapped[str] = mapped_column(String(120), nullable=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    customer: Mapped[Customer] = relationship("Customer", back_populates="contacts", foreign_keys=[customer_id])
+
+
+class CustomerAddress(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "customer_addresses"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "customer_id"],
+            ["customers.organization_id", "customers.id"],
+            name="fk_customer_addresses_org_customer",
+            ondelete="CASCADE",
+        ),
+        Index("ix_customer_addresses_organization_id", "organization_id"),
+        Index("ix_customer_addresses_customer_id", "customer_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    customer_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    address_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=True)
+    line1: Mapped[str] = mapped_column(String(255), nullable=False)
+    line2: Mapped[str] = mapped_column(String(255), nullable=True)
+    city: Mapped[str] = mapped_column(String(120), nullable=True)
+    state: Mapped[str] = mapped_column(String(120), nullable=True)
+    postal_code: Mapped[str] = mapped_column(String(40), nullable=True)
+    country: Mapped[str] = mapped_column(String(120), nullable=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    customer: Mapped[Customer] = relationship("Customer", back_populates="addresses", foreign_keys=[customer_id])
 
 
 class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -249,6 +339,31 @@ class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     organization: Mapped[Organization] = relationship("Organization", back_populates="suppliers")
     purchase_orders: Mapped[list[PurchaseOrder]] = relationship("PurchaseOrder", back_populates="supplier")
+
+
+class Warehouse(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "warehouses"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", name="uq_warehouses_organization_code"),
+        Index("ix_warehouses_organization_id", "organization_id"),
+        Index("ix_warehouses_branch_id", "branch_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    organization: Mapped[Organization] = relationship("Organization", back_populates="warehouses")
+    branch: Mapped[Branch] = relationship("Branch")
+    inventory: Mapped[list[WarehouseInventory]] = relationship("WarehouseInventory", back_populates="warehouse")
 
 
 class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -309,12 +424,96 @@ class InventoryTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    warehouse_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="SET NULL"), nullable=True
+    )
 
     inventory_item: Mapped[InventoryItem] = relationship("InventoryItem", back_populates="transactions")
     organization: Mapped[Organization] = relationship("Organization")
     branch: Mapped[Branch] = relationship("Branch")
     product: Mapped[Product] = relationship("Product")
     creator: Mapped[User] = relationship("User")
+
+
+class WarehouseInventory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "warehouse_inventory"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "warehouse_id", "product_id", name="uq_warehouse_inventory_org_wh_product"),
+        CheckConstraint("quantity >= 0", name="ck_warehouse_inventory_quantity_nonnegative"),
+        CheckConstraint("reserved_quantity >= 0", name="ck_warehouse_inventory_reserved_nonnegative"),
+        CheckConstraint("reserved_quantity <= quantity", name="ck_warehouse_inventory_reserved_lte_quantity"),
+        Index("ix_warehouse_inventory_organization_id", "organization_id"),
+        Index("ix_warehouse_inventory_warehouse_id", "warehouse_id"),
+        Index("ix_warehouse_inventory_product_id", "product_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    warehouse_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    reorder_level: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    reorder_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+
+    @property
+    def available_quantity(self) -> Decimal:
+        return (self.quantity or Decimal(0)) - (self.reserved_quantity or Decimal(0))
+
+    warehouse: Mapped[Warehouse] = relationship("Warehouse", back_populates="inventory")
+    product: Mapped[Product] = relationship("Product")
+
+
+class InventoryTransfer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "inventory_transfers"
+    __table_args__ = (
+        Index("ix_inventory_transfers_organization_id", "organization_id"),
+        Index("ix_inventory_transfers_status", "status"),
+        CheckConstraint("status IN ('DRAFT', 'REQUESTED', 'APPROVED', 'IN_TRANSIT', 'COMPLETED', 'CANCELLED')", name="ck_inventory_transfers_status"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    source_warehouse_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=False)
+    destination_warehouse_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED")
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    items: Mapped[list[InventoryTransferItem]] = relationship("InventoryTransferItem", back_populates="transfer", cascade="all, delete-orphan")
+    source_warehouse: Mapped[Warehouse] = relationship("Warehouse", foreign_keys=[source_warehouse_id])
+    destination_warehouse: Mapped[Warehouse] = relationship("Warehouse", foreign_keys=[destination_warehouse_id])
+
+
+class InventoryTransferItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "inventory_transfer_items"
+    __table_args__ = (UniqueConstraint("transfer_id", "product_id", name="uq_inventory_transfer_product"),)
+
+    transfer_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("inventory_transfers.id", ondelete="CASCADE"), nullable=False)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    transfer: Mapped[InventoryTransfer] = relationship("InventoryTransfer", back_populates="items")
+    product: Mapped[Product] = relationship("Product")
+
+
+class InventoryReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "inventory_reservations"
+    __table_args__ = (Index("ix_inventory_reservations_organization_id", "organization_id"), Index("ix_inventory_reservations_status", "status"))
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    warehouse_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    reference_type: Mapped[str] = mapped_column(String(80), nullable=True)
+    reference_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    created_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class PurchaseOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -341,6 +540,9 @@ class PurchaseOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branch_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
     )
+    warehouse_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=True
+    )
     purchase_order_number: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
     order_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -357,10 +559,49 @@ class PurchaseOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization: Mapped[Organization] = relationship("Organization", back_populates="purchase_orders")
     supplier: Mapped[Supplier] = relationship("Supplier", back_populates="purchase_orders")
     branch: Mapped[Branch] = relationship("Branch")
+    warehouse: Mapped[Warehouse] = relationship("Warehouse")
     creator: Mapped[User] = relationship("User")
     items: Mapped[list[PurchaseOrderItem]] = relationship(
         "PurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan"
     )
+    receipts: Mapped[list[PurchaseReceipt]] = relationship(
+        "PurchaseReceipt", back_populates="purchase_order", cascade="all, delete-orphan"
+    )
+
+
+class PurchaseReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "purchase_receipts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_purchase_receipts_org_key"),
+        Index("ix_purchase_receipts_purchase_order_id", "purchase_order_id"),
+        Index("ix_purchase_receipts_organization_id", "organization_id"),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    organization: Mapped[Organization] = relationship("Organization")
+    purchase_order: Mapped[PurchaseOrder] = relationship("PurchaseOrder", back_populates="receipts")
+    creator: Mapped[User] = relationship("User")
+    items: Mapped[list[PurchaseReceiptItem]] = relationship(
+        "PurchaseReceiptItem", back_populates="receipt", cascade="all, delete-orphan"
+    )
+
+
+class PurchaseReceiptItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "purchase_receipt_items"
+    __table_args__ = (UniqueConstraint("receipt_id", "purchase_order_item_id", name="uq_purchase_receipt_item"),)
+
+    receipt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("purchase_receipts.id", ondelete="CASCADE"), nullable=False)
+    purchase_order_item_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("purchase_order_items.id", ondelete="RESTRICT"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    receipt: Mapped[PurchaseReceipt] = relationship("PurchaseReceipt", back_populates="items")
+    purchase_order_item: Mapped[PurchaseOrderItem] = relationship("PurchaseOrderItem")
 
 
 class PurchaseOrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -404,12 +645,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branch_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False
     )
+    warehouse_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=True
+    )
     customer_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
     )
     order_number: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
     payment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNPAID")
+    requested_fulfillment_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
@@ -419,6 +664,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     organization: Mapped[Organization] = relationship("Organization")
     branch: Mapped[Branch] = relationship("Branch")
+    warehouse: Mapped[Warehouse] = relationship("Warehouse")
     customer: Mapped[Customer] = relationship("Customer")
     items: Mapped[list[OrderItem]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     payments: Mapped[list[Payment]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
@@ -439,9 +685,18 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     discount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     line_total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    fulfilled_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
 
     order: Mapped[Order] = relationship("Order", back_populates="items")
     product: Mapped[Product] = relationship("Product")
+
+    @property
+    def product_name(self) -> str | None:
+        return self.product.name if self.product else None
+
+    @property
+    def product_sku(self) -> str | None:
+        return self.product.sku if self.product else None
 
 
 class Payment(UUIDPrimaryKeyMixin, TimestampMixin, Base):

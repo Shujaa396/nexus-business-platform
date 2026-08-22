@@ -20,6 +20,8 @@ from app.models import (
     Product,
     PurchaseOrder,
     Supplier,
+    Warehouse,
+    WarehouseInventory,
 )
 from app.schemas.analytics import AnalyticsFilters, AnalyticsIntent, normalized_range
 
@@ -250,6 +252,42 @@ def procurement_summary(db: Session, organization_id: UUID, filters: AnalyticsFi
     }
 
 
+def warehouse_summary(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    warehouses = db.query(Warehouse).filter(Warehouse.organization_id == organization_id, Warehouse.is_active.is_(True)).all()
+    rows = []
+    total = Decimal(0)
+    for warehouse in warehouses:
+        inventory = db.query(WarehouseInventory).filter(WarehouseInventory.organization_id == organization_id, WarehouseInventory.warehouse_id == warehouse.id).all()
+        value = sum((_money(item.quantity) * _money(item.product.cost_price) for item in inventory if item.product), Decimal(0))
+        total += value
+        rows.append({"warehouse_id": warehouse.id, "name": warehouse.name, "code": warehouse.code, "inventory_value": value, "product_count": len(inventory), "low_stock_count": sum(1 for item in inventory if item.available_quantity <= item.reorder_level)})
+    return {"total_inventory_value": total, "warehouses": rows}
+
+
+def sales_order_summary(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    start, end = normalized_range(filters)
+    query = db.query(Order).filter(Order.organization_id == organization_id, Order.created_at >= start, Order.created_at <= end)
+    return {"order_count": query.count(), "open_orders": query.filter(Order.status.not_in(("COMPLETED", "CANCELLED"))).count(), "pending_fulfillment": query.filter(Order.status.in_(("RESERVED", "PARTIALLY_FULFILLED"))).count(), "sales_total": sum((_money(order.total) for order in query.all() if order.status != "CANCELLED"), Decimal(0))}
+
+
+def fulfillment_summary(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    start, end = normalized_range(filters)
+    query = db.query(Order).filter(Order.organization_id == organization_id, Order.created_at >= start, Order.created_at <= end)
+    counts = {status: query.filter(Order.status == status).count() for status in ("APPROVED", "RESERVED", "PARTIALLY_FULFILLED", "FULFILLED")}
+    return {"by_status": counts, "pending_fulfillment": counts["RESERVED"] + counts["PARTIALLY_FULFILLED"]}
+
+
+def customer_sales(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    data = top_customers(db, organization_id, filters)
+    return {"customers": data["customers"]}
+
+
+def outstanding_customer_balance(db: Session, organization_id: UUID, filters: AnalyticsFilters) -> dict[str, Any]:
+    start, end = normalized_range(filters)
+    invoices = db.query(Invoice).filter(Invoice.organization_id == organization_id, Invoice.created_at >= start, Invoice.created_at <= end, Invoice.status.not_in(("PAID", "VOID"))).all()
+    return {"outstanding_total": sum((_money(invoice.total) - _money(invoice.amount_paid) for invoice in invoices), Decimal(0)), "invoice_count": len(invoices)}
+
+
 def execute(db: Session, organization_id: UUID, intent: AnalyticsIntent, filters: AnalyticsFilters) -> tuple[datetime, datetime, dict[str, Any]]:
     operations = {
         "sales_summary": sales_summary,
@@ -262,6 +300,11 @@ def execute(db: Session, organization_id: UUID, intent: AnalyticsIntent, filters
         "invoice_summary": invoice_summary,
         "supplier_summary": supplier_summary,
         "procurement_summary": procurement_summary,
+        "warehouse_summary": warehouse_summary,
+        "sales_order_summary": sales_order_summary,
+        "fulfillment_summary": fulfillment_summary,
+        "customer_sales": customer_sales,
+        "outstanding_customer_balance": outstanding_customer_balance,
     }
     start, end = normalized_range(filters)
     return start, end, operations[intent](db, organization_id, filters)

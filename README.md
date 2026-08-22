@@ -147,6 +147,8 @@ Analytics never accepts raw SQL, arbitrary code, database credentials, or unrest
 
 Purchase Orders connect Phase 8 suppliers to inventory receiving through an admin/manager-controlled workflow: `DRAFT`, `SUBMITTED`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, and `CANCELLED`. Receiving is atomic, cannot exceed ordered quantities, and uses receipt references to prevent duplicate stock increases.
 
+Phase 11 adds warehouse-aware inventory. Warehouses belong to an existing branch, stock can be adjusted, reserved, transferred, valued, and monitored independently by warehouse. Transfers use an atomic approve/dispatch/receive lifecycle, and warehouse operations are tenant-scoped and audited.
+
 ## Security Notes
 
 - Secrets must be supplied through environment variables.

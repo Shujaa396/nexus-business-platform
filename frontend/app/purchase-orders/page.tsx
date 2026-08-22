@@ -27,6 +27,7 @@ import { EmptyStateView, ErrorStateView, LoadingSpinner } from "../../components
 import { listBranches } from "../../lib/branches";
 import { listProducts } from "../../lib/products";
 import { listSuppliers } from "../../lib/suppliers";
+import { listWarehouses } from "../../lib/warehouses";
 import {
   approvePurchaseOrder,
   cancelPurchaseOrder,
@@ -68,6 +69,7 @@ export default function PurchaseOrdersPage() {
   const [receiveError, setReceiveError] = useState("");
   const [formSupplierId, setFormSupplierId] = useState("");
   const [formBranchId, setFormBranchId] = useState("");
+  const [formWarehouseId, setFormWarehouseId] = useState("");
   const [formExpectedDate, setFormExpectedDate] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [formTax, setFormTax] = useState("0");
@@ -90,6 +92,7 @@ export default function PurchaseOrdersPage() {
   });
   const suppliersQuery = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers({ page_size: 100 }) });
   const branchesQuery = useQuery({ queryKey: ["branches"], queryFn: () => listBranches() });
+  const warehousesQuery = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
   const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProducts({ page_size: 100 }) });
   const detailQuery = useQuery({ queryKey: ["purchase-order", detailId], queryFn: () => getPurchaseOrder(detailId as string), enabled: !!detailId });
 
@@ -108,6 +111,7 @@ export default function PurchaseOrdersPage() {
 
   const suppliers = suppliersQuery.data ?? [];
   const branches = branchesQuery.data ?? [];
+  const warehouses = warehousesQuery.data ?? [];
   const products = productsQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
   const supplierMap = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
@@ -125,6 +129,7 @@ export default function PurchaseOrdersPage() {
     setEditingOrder(null);
     setFormSupplierId(suppliers[0]?.id ?? "");
     setFormBranchId(branches[0]?.id ?? "");
+    setFormWarehouseId("");
     setFormExpectedDate("");
     setFormNotes("");
     setFormTax("0");
@@ -137,6 +142,7 @@ export default function PurchaseOrdersPage() {
     setEditingOrder(order);
     setFormSupplierId(order.supplier_id);
     setFormBranchId(order.branch_id);
+    setFormWarehouseId(order.warehouse_id ?? "");
     setFormExpectedDate(order.expected_delivery_date?.slice(0, 10) ?? "");
     setFormNotes(order.notes ?? "");
     setFormTax(String(order.tax));
@@ -163,7 +169,7 @@ export default function PurchaseOrdersPage() {
     setFormError("");
     if (!formSupplierId || !formBranchId || formItems.length === 0) { setFormError("Supplier, branch, and at least one product are required."); return; }
     if (formItems.some((item) => Number(item.quantity) <= 0 || Number(item.unit_cost) < 0)) { setFormError("Quantities must be greater than zero and unit costs cannot be negative."); return; }
-    const payload: PurchaseOrderCreate = { supplier_id: formSupplierId, branch_id: formBranchId, expected_delivery_date: formExpectedDate ? `${formExpectedDate}T23:59:59Z` : undefined, tax: Number(formTax || 0), discount: Number(formDiscount || 0), notes: formNotes || undefined, items: formItems.map((item) => ({ product_id: item.product_id, quantity: Number(item.quantity), unit_cost: Number(item.unit_cost) })) };
+    const payload: PurchaseOrderCreate = { supplier_id: formSupplierId, branch_id: formBranchId, warehouse_id: formWarehouseId || undefined, expected_delivery_date: formExpectedDate ? `${formExpectedDate}T23:59:59Z` : undefined, tax: Number(formTax || 0), discount: Number(formDiscount || 0), notes: formNotes || undefined, items: formItems.map((item) => ({ product_id: item.product_id, quantity: Number(item.quantity), unit_cost: Number(item.unit_cost) })) };
     if (editingOrder) updateMutation.mutate({ id: editingOrder.id, payload }); else createMutation.mutate(payload);
   }
   function openReceive(order: PurchaseOrder) {

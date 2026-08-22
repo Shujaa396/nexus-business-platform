@@ -159,6 +159,30 @@ def procurement(
     return _execute(AnalyticsQueryRequest(intent="procurement_summary", **filters.model_dump()), membership, db)
 
 
+@router.get("/warehouses", response_model=AnalyticsResponse)
+def warehouse_analytics(
+    filters: AnalyticsFilters = Depends(_filters),
+    membership=Depends(require_role(["admin", "manager"])),
+    db: Session = Depends(get_db),
+) -> Any:
+    return _execute(AnalyticsQueryRequest(intent="warehouse_summary", **filters.model_dump()), membership, db)
+
+
+@router.get("/sales-orders", response_model=AnalyticsResponse)
+def sales_order_analytics(filters: AnalyticsFilters = Depends(_filters), membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
+    return _execute(AnalyticsQueryRequest(intent="sales_order_summary", **filters.model_dump()), membership, db)
+
+
+@router.get("/fulfillment", response_model=AnalyticsResponse)
+def fulfillment_analytics(filters: AnalyticsFilters = Depends(_filters), membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
+    return _execute(AnalyticsQueryRequest(intent="fulfillment_summary", **filters.model_dump()), membership, db)
+
+
+@router.get("/outstanding-customer-balance", response_model=AnalyticsResponse)
+def outstanding_balance_analytics(filters: AnalyticsFilters = Depends(_filters), membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
+    return _execute(AnalyticsQueryRequest(intent="outstanding_customer_balance", **filters.model_dump()), membership, db)
+
+
 @router.post("/query", response_model=NaturalLanguageQueryResponse)
 def natural_language_query(
     payload: NaturalLanguageQueryRequest,

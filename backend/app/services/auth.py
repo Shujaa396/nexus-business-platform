@@ -8,6 +8,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     hash_password,
+    issue_refresh_token,
     verify_password,
 )
 from app.models import Organization, OrganizationMembership, Role, User
@@ -20,8 +21,39 @@ def get_user_by_email(db: Session, email: str) -> User | None:
 def get_default_membership(db: Session, user_id: UUID) -> OrganizationMembership | None:
     return (
         db.query(OrganizationMembership)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
         .filter(OrganizationMembership.user_id == user_id, OrganizationMembership.is_active.is_(True))
+        .filter(Organization.is_active.is_(True))
         .order_by(OrganizationMembership.created_at.asc())
+        .first()
+    )
+
+
+def get_user_memberships(db: Session, user_id: UUID) -> list[OrganizationMembership]:
+    """List all active organization memberships for a user."""
+    return (
+        db.query(OrganizationMembership)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
+        .filter(OrganizationMembership.user_id == user_id, OrganizationMembership.is_active.is_(True))
+        .filter(Organization.is_active.is_(True))
+        .order_by(OrganizationMembership.created_at.asc())
+        .all()
+    )
+
+
+def get_user_membership(
+    db: Session, user_id: UUID, organization_id: UUID
+) -> OrganizationMembership | None:
+    """Get a specific membership for a user in an organization."""
+    return (
+        db.query(OrganizationMembership)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
+        .filter(
+            OrganizationMembership.user_id == user_id,
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.is_active.is_(True),
+        )
+        .filter(Organization.is_active.is_(True))
         .first()
     )
 
@@ -79,7 +111,7 @@ def register_user(
     db.flush()
 
     access_token = create_access_token(str(user.id))
-    refresh_token = create_refresh_token(str(user.id))
+    refresh_token = issue_refresh_token(db, user)
     return user, organization, role, membership, access_token, refresh_token
 
 

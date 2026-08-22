@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_membership
+from app.core.security import get_current_membership, require_role
 from app.db.session import get_db
 from app.models import Category, Product, Supplier
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/products", tags=["products"])
 
 
 @router.post("", response_model=ProductResponse)
-def create_product(payload: ProductCreate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def create_product(payload: ProductCreate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     # validate category ownership
     if payload.category_id:
@@ -85,7 +85,7 @@ def get_product(product_id: UUID, membership=Depends(get_current_membership), db
 
 
 @router.patch("/{product_id}", response_model=ProductResponse)
-def update_product(product_id: UUID, payload: ProductUpdate, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def update_product(product_id: UUID, payload: ProductUpdate, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     product = db.get(Product, product_id)
     if product is None or product.organization_id != org_id:
@@ -119,7 +119,7 @@ def update_product(product_id: UUID, payload: ProductUpdate, membership=Depends(
 
 
 @router.delete("/{product_id}")
-def delete_product(product_id: UUID, membership=Depends(get_current_membership), db: Session = Depends(get_db)) -> Any:
+def delete_product(product_id: UUID, membership=Depends(require_role(["admin", "manager"])), db: Session = Depends(get_db)) -> Any:
     org_id = membership.organization_id
     product = db.get(Product, product_id)
     if product is None or product.organization_id != org_id:

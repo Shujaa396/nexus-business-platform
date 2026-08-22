@@ -92,7 +92,15 @@ def test_purchase_order_lifecycle_receiving_and_inventory():
         json={"receipt_reference": "GRN-001", "items": [{"item_id": item_id, "quantity": "4"}]},
         headers=headers,
     )
-    assert duplicate.status_code == 400
+    assert duplicate.status_code == 200, duplicate.text
+    assert Decimal(duplicate.json()["items"][0]["received_quantity"]) == Decimal("4.00")
+
+    conflicting = client.post(
+        f"/api/v1/purchase-orders/{order_id}/receive",
+        json={"receipt_reference": "GRN-001", "items": [{"item_id": item_id, "quantity": "3"}]},
+        headers=headers,
+    )
+    assert conflicting.status_code == 400
 
     excessive = client.post(
         f"/api/v1/purchase-orders/{order_id}/receive",

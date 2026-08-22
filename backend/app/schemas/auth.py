@@ -22,6 +22,10 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class SelectOrganizationRequest(BaseModel):
+    organization_id: UUID
+
+
 class UserPublic(BaseModel):
     id: UUID
     email: EmailStr
@@ -41,6 +45,19 @@ class OrganizationSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrganizationMembershipResponse(BaseModel):
+    id: UUID
+    organization: OrganizationSummary
+    role_name: str | None = None
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationMembershipsResponse(BaseModel):
+    memberships: list[OrganizationMembershipResponse]
+
+
 class TokenPairResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -55,5 +72,6 @@ class AuthResponse(TokenPairResponse):
 class MeResponse(UserPublic):
     organization_id: UUID | None = None
     organization_name: str | None = None
+    role_name: str | None = None
 
     model_config = {"from_attributes": True}

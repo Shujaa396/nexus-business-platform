@@ -12,6 +12,10 @@ Phase 9 requires no new tables or migration. Analytics reads existing tenant-sco
 
 Phase 10 adds `purchase_orders` and `purchase_order_items`. Purchase orders reference existing tenant-scoped suppliers, branches, and users. Items reference existing products and store ordered quantity, received quantity, unit cost, and calculated subtotal. Receiving writes `inventory_transactions` with `reference_type = PURCHASE_ORDER_RECEIPT` and the purchase order ID, then updates inventory atomically. No supplier or product tables are duplicated.
 
+## Phase 11 Warehouse Tables
+
+Phase 11 adds `warehouses`, `warehouse_inventory`, `inventory_transfers`, `inventory_transfer_items`, and `inventory_reservations`. Warehouses are linked to existing branches; legacy `inventory_items` remains available for backward-compatible branch stock. Warehouse inventory stores physical quantity, reserved quantity, reorder level, and reorder quantity with non-negative database checks. Existing `inventory_transactions` and its immutable history are extended with an optional warehouse reference. Purchase orders may target a warehouse, causing receipt stock and movement history to be recorded there. Valuation uses physical quantity multiplied by the existing product `cost_price`.
+
 ## Production Database Strategy
 
 - Database engine: PostgreSQL
@@ -168,6 +172,15 @@ Every inventory query scoped by organization_id:
 - Never trusts organization_id from client request
 
 ## Planned Future Domains
+
+## Phase 14 Integrity Notes
+
+- Customer contacts and addresses are tenant-scoped child tables with cascading customer ownership and indexed customer lookups.
+- Customer codes are unique within an organization; warehouse inventory retains physical/reserved quantity checks.
+- Phase 14 service operations lock tenant-owned orders, payments, reservations, warehouses, and transfers before mutation where the workflow requires it.
+- Phase 14 adds composite customer ownership constraints for contacts and addresses. Other candidate relationships were reviewed: order items lack their own organization_id, while service-level organization predicates already protect payment, invoice, purchase-order, transfer, reservation, and warehouse relationships; adding composite keys there would require wider additive column/backfill migrations and PostgreSQL data verification.
+- Purchase receipts use a unique (organization_id, idempotency_key) constraint and request fingerprint to make retries durable and tenant-independent.
+- The historical Phase 7 SQLite foreign-key alteration limitation remains unchanged; PostgreSQL is the production migration target.
 
 ### Identity and Access
 
