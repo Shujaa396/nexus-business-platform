@@ -10,3 +10,6 @@ ignore = ["B008", "E501"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = ["-p", "no:ra"]
+
+[tool.vercel]
+entrypoint = "app.main:app"

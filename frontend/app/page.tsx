@@ -34,7 +34,7 @@ export default function Home() {
               </a>
               <a
                 className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-4 py-3 text-sm font-semibold text-slate-900"
-                href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"}/health`}
+                href={`${process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "production" ? "/api/v1" : "http://localhost:8000/api/v1")}/health`}
               >
                 <Server aria-hidden="true" className="h-4 w-4" />
                 API health
